@@ -3,7 +3,7 @@ package binary
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/nathanhack/serialstruct/internal"
+	"github.com/nathanhack/binary/internal"
 	"reflect"
 	"strconv"
 	"strings"
