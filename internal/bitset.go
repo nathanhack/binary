@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 )
@@ -50,65 +51,69 @@ func NewFromBits(bits []bool) (*BitSetBuffer, error) {
 	return &b, nil
 }
 
-func (set *BitSetBuffer) ResetToStart() {
-	set.pos = 0
+func (bsb *BitSetBuffer) ResetToStart() {
+	bsb.pos = 0
 }
 
-func (set *BitSetBuffer) ResetToEnd() {
-	set.pos = len(set.Set)
+func (bsb *BitSetBuffer) ResetToEnd() {
+	bsb.pos = len(bsb.Set)
 }
 
-func (set *BitSetBuffer) PosAtEnd() bool {
-	return set.pos == len(set.Set)
+func (bsb *BitSetBuffer) PosAtEnd() bool {
+	return bsb.pos == len(bsb.Set)
 }
 
-func (set *BitSetBuffer) Read(bytes []byte) (n int, err error) {
+func (bsb *BitSetBuffer) Read(bytes []byte) (n int, err error) {
 	if bytes == nil {
 		return 0, fmt.Errorf("error nil passed in")
 	}
+	if bsb.PosAtEnd() {
+		return 0, io.EOF
+	}
+
 	n = 0
-	for n < len(bytes) && !set.PosAtEnd() {
-		bytes[n] = set.readByte()
+	for n < len(bytes) && !bsb.PosAtEnd() {
+		bytes[n] = bsb.readByte()
 		n++
 	}
 	return n, nil
 }
 
-func (set *BitSetBuffer) ReadBits(bits []bool) (n int, err error) {
+func (bsb *BitSetBuffer) ReadBits(bits []bool) (n int, err error) {
 	if bits == nil {
 		return 0, fmt.Errorf("error nil passed in")
 	}
 	for n = 0; n < len(bits); n++ {
-		if set.pos >= len(set.Set) {
+		if bsb.pos >= len(bsb.Set) {
 			return
 		}
-		bits[n] = set.Set[set.pos]
-		set.pos++
+		bits[n] = bsb.Set[bsb.pos]
+		bsb.pos++
 	}
 	return
 }
 
-func (set *BitSetBuffer) Write(bytes []byte) (n int, err error) {
+func (bsb *BitSetBuffer) Write(bytes []byte) (n int, err error) {
 	n = 0
 	for n < len(bytes) {
-		set.writeByte(bytes[n])
+		bsb.writeByte(bytes[n])
 		n++
 	}
 	return n, nil
 }
 
-func (set *BitSetBuffer) WriteBits(bits []bool) (n int, err error) {
-	if set.Set == nil {
-		set.Set = make([]bool, 0)
+func (bsb *BitSetBuffer) WriteBits(bits []bool) (n int, err error) {
+	if bsb.Set == nil {
+		bsb.Set = make([]bool, 0)
 	}
 
 	for n = 0; n < len(bits); n++ {
-		if set.pos < len(set.Set) {
-			set.Set[set.pos] = bits[n]
+		if bsb.pos < len(bsb.Set) {
+			bsb.Set[bsb.pos] = bits[n]
 		} else {
-			set.Set = append(set.Set, bits[n])
+			bsb.Set = append(bsb.Set, bits[n])
 		}
-		set.pos++
+		bsb.pos++
 	}
 	return
 }
@@ -120,49 +125,125 @@ func min(a, b int) int {
 	return b
 }
 
-func (set *BitSetBuffer) readByte() (b byte) {
+func (bsb *BitSetBuffer) readByte() (b byte) {
 	b = 0
 	defer func() {
-		set.pos = min(len(set.Set), set.pos+8)
+		bsb.pos = min(len(bsb.Set), bsb.pos+8)
 	}()
 
 	for i := 0; i < 8; i++ {
-		index := i + set.pos
-		if index >= len(set.Set) {
+		index := i + bsb.pos
+		if index >= len(bsb.Set) {
 			return
 		}
-		if set.Set[index] {
+		if bsb.Set[index] {
 			b = b | (1 << i)
 		}
 	}
 	return
 }
 
-func (set *BitSetBuffer) writeByte(b byte) {
+func (bsb *BitSetBuffer) writeByte(b byte) {
 	for i := 0; i < 8; i++ {
 		value := b&(1<<i) > 0
 
-		if set.pos < len(set.Set) {
-			set.Set[set.pos] = value
+		if bsb.pos < len(bsb.Set) {
+			bsb.Set[bsb.pos] = value
 		} else {
-			if set.Set == nil {
-				set.Set = make([]bool, 0)
+			if bsb.Set == nil {
+				bsb.Set = make([]bool, 0)
 			}
-			set.Set = append(set.Set, value)
+			bsb.Set = append(bsb.Set, value)
 		}
-		set.pos++
+		bsb.pos++
 	}
 }
 
-func (set *BitSetBuffer) Bytes() []byte {
-	old := set.pos
+func (bsb *BitSetBuffer) Bytes() []byte {
+	old := bsb.pos
 	defer func() {
-		set.pos = old
+		bsb.pos = old
 	}()
-	set.ResetToStart()
+	bsb.ResetToStart()
 	buf := make([]byte, 0)
-	for !set.PosAtEnd() {
-		buf = append(buf, set.readByte())
+	for !bsb.PosAtEnd() {
+		buf = append(buf, bsb.readByte())
 	}
 	return buf
+}
+
+func (bsb *BitSetBuffer) ReadByte() (byte, bool) {
+	return bsb.ReadUint8()
+}
+
+func (bsb *BitSetBuffer) ReadUint8() (uint8, bool) {
+	var b uint8
+	if err := binary.Read(bsb, binary.LittleEndian, &b); err != nil {
+		return 0, false
+	}
+
+	return b, true
+}
+
+func (bsb *BitSetBuffer) ReadUint16(order binary.ByteOrder) (uint16, bool) {
+	var b uint16
+	if err := binary.Read(bsb, order, &b); err != nil {
+		return 0, false
+	}
+
+	return b, true
+}
+
+func (bsb *BitSetBuffer) ReadUint32(order binary.ByteOrder) (uint32, bool) {
+	var b uint32
+	if err := binary.Read(bsb, order, &b); err != nil {
+		return 0, false
+	}
+
+	return b, true
+}
+
+func (bsb *BitSetBuffer) ReadUint64(order binary.ByteOrder) (uint64, bool) {
+	var b uint64
+	if err := binary.Read(bsb, order, &b); err != nil {
+		return 0, false
+	}
+
+	return b, true
+}
+
+func (bsb *BitSetBuffer) ReadInt8() (int8, bool) {
+	var b int8
+	if err := binary.Read(bsb, binary.LittleEndian, &b); err != nil {
+		return 0, false
+	}
+
+	return b, true
+}
+
+func (bsb *BitSetBuffer) ReadInt16(order binary.ByteOrder) (int16, bool) {
+	var b int16
+	if err := binary.Read(bsb, order, &b); err != nil {
+		return 0, false
+	}
+
+	return b, true
+}
+
+func (bsb *BitSetBuffer) ReadInt32(order binary.ByteOrder) (int32, bool) {
+	var b int32
+	if err := binary.Read(bsb, order, &b); err != nil {
+		return 0, false
+	}
+
+	return b, true
+}
+
+func (bsb *BitSetBuffer) ReadInt64(order binary.ByteOrder) (int64, bool) {
+	var b int64
+	if err := binary.Read(bsb, order, &b); err != nil {
+		return 0, false
+	}
+
+	return b, true
 }
