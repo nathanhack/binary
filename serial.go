@@ -29,7 +29,7 @@ loop:
 	}
 
 	buf := &internal.BitSetBuffer{}
-	sizeMap := map[string]int64{}
+	sizeMap := map[string]int{}
 	for i := 0; i < t.NumField(); i++ {
 		sf := t.Field(i)
 		err := enc(sf.Name, sf.Type, v.Field(i), sf.Tag, buf, sizeMap)
@@ -41,15 +41,22 @@ loop:
 	return buf.Bytes(), nil
 }
 
-func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf internal.BitSetWriter, sizeMap map[string]int64) error {
+func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf internal.BitSetWriter, sizeMap map[string]int) error {
+	endianness, err := getEndianness(tag)
+	if err != nil {
+		return fmt.Errorf("%v: %v", fieldName, err)
+	}
+
 	switch t.Kind() {
 	case reflect.Ptr:
 		if v.IsNil() {
-			return encEmpty("", t.Elem(), tag, buf, sizeMap)
+			val := reflect.New(t.Elem())
+			return enc(fieldName, t.Elem(), val.Elem(), tag, buf, sizeMap)
+		} else {
+			return enc(fieldName, t.Elem(), v.Elem(), tag, buf, sizeMap)
 		}
-		return enc(fieldName, t.Elem(), v.Elem(), tag, buf, sizeMap)
 	case reflect.Struct:
-		m := map[string]int64{}
+		m := map[string]int{}
 		for k, v := range sizeMap {
 			m[k] = v
 		}
@@ -67,7 +74,6 @@ func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTa
 				return err
 			}
 		}
-		return nil
 	case reflect.Slice:
 		itemslen := v.Len()
 		blanks := uint64(0)
@@ -90,19 +96,20 @@ func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTa
 				blanks = suint - uint64(itemslen)
 			}
 		}
+
 		for i := 0; i < itemslen; i++ {
 			item := v.Index(i)
 			if err := enc("", item.Type(), item, tag, buf, sizeMap); err != nil {
 				return err
 			}
 		}
+		//now we make empty items! to fill up to the size
 		for i := uint64(0); i < blanks; i++ {
-			if err := encEmpty("", t.Elem(), tag, buf, sizeMap); err != nil {
+			item := reflect.New(t.Elem())
+			if err := enc("", t.Elem(), item.Elem(), tag, buf, sizeMap); err != nil {
 				return err
 			}
 		}
-
-		return nil
 	case reflect.String:
 		s := v.String()
 		itemslen := len(s)
@@ -134,79 +141,134 @@ func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTa
 		if n != len(str) {
 			return fmt.Errorf("writing string value `%v` failed", str)
 		}
-		return nil
-	case reflect.Uint8:
-		sizeMap[fieldName] = int64(v.Uint())
+	case reflect.Bool:
 		bitSize, hasBits, err := getBits(tag, sizeMap, 8)
 		if err != nil {
 			return err
 		}
 		if hasBits {
-			writeBits(buf, bitSize, v.Uint())
+			tmp := uint64(0)
+			if v.Bool() {
+				tmp = 1
+			}
+			err := writeBits(buf, bitSize, endianness, tmp)
+			if err != nil {
+				return fmt.Errorf("%v : %v", fieldName, err)
+			}
 		} else {
-			return binary.Write(buf, getEndianness(tag), uint8(v.Uint()))
+			err := binary.Write(buf, endianness, v.Bool())
+			if err != nil {
+				return fmt.Errorf("%v : %v", fieldName, err)
+			}
+		}
+	case reflect.Uint8:
+		sizeMap[fieldName] = int(v.Uint())
+		bitSize, hasBits, err := getBits(tag, sizeMap, 8)
+		if err != nil {
+			return err
+		}
+		if hasBits {
+			err := writeBits(buf, bitSize, endianness, v.Uint())
+			if err != nil {
+				return fmt.Errorf("%v : %v", fieldName, err)
+			}
+		} else {
+			err := binary.Write(buf, endianness, uint8(v.Uint()))
+			if err != nil {
+				return fmt.Errorf("%v : %v", fieldName, err)
+			}
 		}
 	case reflect.Uint16:
-		sizeMap[fieldName] = int64(v.Uint())
-		bitSize, hasBits, err := getBits(tag, sizeMap, 8)
+		sizeMap[fieldName] = int(v.Uint())
+		bitSize, hasBits, err := getBits(tag, sizeMap, 16)
 		if err != nil {
 			return err
 		}
 		if hasBits {
-			writeBits(buf, bitSize, v.Uint())
+			err := writeBits(buf, bitSize, endianness, v.Uint())
+			if err != nil {
+				return fmt.Errorf("%v : %v", fieldName, err)
+			}
 		} else {
-			return binary.Write(buf, getEndianness(tag), uint16(v.Uint()))
+			err := binary.Write(buf, endianness, uint16(v.Uint()))
+			if err != nil {
+				return fmt.Errorf("%v : %v", fieldName, err)
+			}
 		}
 	case reflect.Uint32:
-		sizeMap[fieldName] = int64(v.Uint())
-		bitSize, hasBits, err := getBits(tag, sizeMap, 8)
+		sizeMap[fieldName] = int(v.Uint())
+		bitSize, hasBits, err := getBits(tag, sizeMap, 32)
 		if err != nil {
 			return err
 		}
 		if hasBits {
-			writeBits(buf, bitSize, v.Uint())
+			err := writeBits(buf, bitSize, endianness, v.Uint())
+			if err != nil {
+				return fmt.Errorf("%v : %v", fieldName, err)
+			}
 		} else {
-			return binary.Write(buf, getEndianness(tag), uint32(v.Uint()))
+			err := binary.Write(buf, endianness, uint32(v.Uint()))
+			if err != nil {
+				return fmt.Errorf("%v : %v", fieldName, err)
+			}
 		}
 	case reflect.Uint64:
-		sizeMap[fieldName] = int64(v.Uint())
-		bitSize, hasBits, err := getBits(tag, sizeMap, 8)
+		sizeMap[fieldName] = int(v.Uint())
+		bitSize, hasBits, err := getBits(tag, sizeMap, 64)
 		if err != nil {
 			return err
 		}
 		if hasBits {
-			writeBits(buf, bitSize, v.Uint())
+			err := writeBits(buf, bitSize, endianness, v.Uint())
+			if err != nil {
+				return fmt.Errorf("%v : %v", fieldName, err)
+			}
 		} else {
-			return binary.Write(buf, getEndianness(tag), v.Uint())
+			err := binary.Write(buf, endianness, v.Uint())
+			if err != nil {
+				return fmt.Errorf("%v : %v", fieldName, err)
+			}
 		}
 	case reflect.Int8:
 		_, has := tag.Lookup("bits")
 		if has {
 			return fmt.Errorf("bits not supported on int16")
 		}
-		sizeMap[fieldName] = v.Int()
-		return binary.Write(buf, getEndianness(tag), int8(v.Int()))
+		sizeMap[fieldName] = int(v.Int())
+		err := binary.Write(buf, endianness, int8(v.Int()))
+		if err != nil {
+			return fmt.Errorf("%v : %v", fieldName, err)
+		}
 	case reflect.Int16:
 		_, has := tag.Lookup("bits")
 		if has {
 			return fmt.Errorf("bits not supported on int16")
 		}
-		sizeMap[fieldName] = v.Int()
-		return binary.Write(buf, getEndianness(tag), int16(v.Int()))
+		sizeMap[fieldName] = int(v.Int())
+		err := binary.Write(buf, endianness, int16(v.Int()))
+		if err != nil {
+			return fmt.Errorf("%v : %v", fieldName, err)
+		}
 	case reflect.Int32:
 		_, has := tag.Lookup("bits")
 		if has {
 			return fmt.Errorf("bits not supported on int32")
 		}
-		sizeMap[fieldName] = v.Int()
-		return binary.Write(buf, getEndianness(tag), int32(v.Int()))
+		sizeMap[fieldName] = int(v.Int())
+		err := binary.Write(buf, endianness, int32(v.Int()))
+		if err != nil {
+			return fmt.Errorf("%v : %v", fieldName, err)
+		}
 	case reflect.Int64:
 		_, has := tag.Lookup("bits")
 		if has {
 			return fmt.Errorf("bits not supported on int64")
 		}
-		sizeMap[fieldName] = v.Int()
-		return binary.Write(buf, getEndianness(tag), v.Int())
+		sizeMap[fieldName] = int(v.Int())
+		err := binary.Write(buf, endianness, v.Int())
+		if err != nil {
+			return fmt.Errorf("%v : %v", fieldName, err)
+		}
 	default:
 		return fmt.Errorf("%v not supported", t)
 	}
@@ -214,166 +276,117 @@ func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTa
 	return nil
 }
 
-func writeBits(buf internal.BitSetWriter, numOfBits int, value uint64) {
+func writeBits(buf internal.BitSetWriter, numOfBits int, endianness binary.ByteOrder, value uint64) error {
 	bits := make([]bool, numOfBits)
 	for i := 0; i < numOfBits; i++ {
 		bits[i] = value&(1<<i) > 0
 	}
-	buf.WriteBits(bits)
-}
 
-func encEmpty(fieldName string, t reflect.Type, tag reflect.StructTag, buf internal.BitSetWriter, sizeMap map[string]int64) error {
-	switch t.Kind() {
-	case reflect.Ptr:
-		return encEmpty("", t.Elem(), tag, buf, sizeMap)
-	case reflect.Struct:
-		m := map[string]int64{}
-		for k, v := range sizeMap {
-			m[k] = v
+	if endianness == binary.LittleEndian {
+		n, err := buf.WriteBits(bits)
+		if err != nil {
+			return err
 		}
-		for i := 0; i < t.NumField(); i++ {
-			sf := t.Field(i)
-			err := encEmpty(sf.Name, sf.Type, sf.Tag, buf, m)
-			if err != nil {
-				return err
-			}
-		}
-	case reflect.Array:
-		for i := 0; i < t.Len(); i++ {
-			if err := encEmpty("", t.Elem(), tag, buf, sizeMap); err != nil {
-				return err
-			}
+		if n != numOfBits {
+			return fmt.Errorf("only %v of %v bits written", n, numOfBits)
 		}
 		return nil
-	case reflect.Slice:
-		blanks := uint64(0)
-		if s, ok := tag.Lookup("size"); ok {
-			var err error
-			blanks, err = strconv.ParseUint(s, 10, 64)
-			if err != nil {
-				return fmt.Errorf("unsigned integer for size not parsable:%v", err)
-			}
-
-		}
-		for i := uint64(0); i < blanks; i++ {
-			if err := encEmpty("", t.Elem(), tag, buf, sizeMap); err != nil {
-				return err
-			}
-		}
-		return nil
-	case reflect.String:
-		blanks := uint64(0)
-		if s, ok := tag.Lookup("strlen"); ok {
-			var err error
-			blanks, err = strconv.ParseUint(s, 10, 64)
-			if err != nil {
-				return fmt.Errorf("unsigned integer for size not parsable:%v", err)
-			}
-		}
-		str := strings.Repeat(" ", int(blanks))
-		n, err := buf.Write([]byte(str))
-		if err != nil {
-			return err
-		}
-		if n != len(str) {
-			return fmt.Errorf("writing string value `%v` failed", str)
-		}
-		return nil
-	case reflect.Uint8:
-		sizeMap[fieldName] = 0
-		bitSize, hasBits, err := getBits(tag, sizeMap, 8)
-		if err != nil {
-			return err
-		}
-		if hasBits {
-			writeBits(buf, bitSize, 0)
-		} else {
-			return binary.Write(buf, getEndianness(tag), uint8(0))
-		}
-	case reflect.Uint16:
-		sizeMap[fieldName] = 0
-		bitSize, hasBits, err := getBits(tag, sizeMap, 8)
-		if err != nil {
-			return err
-		}
-		if hasBits {
-			writeBits(buf, bitSize, 0)
-		} else {
-			return binary.Write(buf, getEndianness(tag), uint16(0))
-		}
-	case reflect.Uint32:
-		sizeMap[fieldName] = 0
-		bitSize, hasBits, err := getBits(tag, sizeMap, 8)
-		if err != nil {
-			return err
-		}
-		if hasBits {
-			writeBits(buf, bitSize, 0)
-		} else {
-			return binary.Write(buf, getEndianness(tag), uint32(0))
-		}
-	case reflect.Uint64:
-		sizeMap[fieldName] = 0
-		bitSize, hasBits, err := getBits(tag, sizeMap, 8)
-		if err != nil {
-			return err
-		}
-		if hasBits {
-			writeBits(buf, bitSize, 0)
-		} else {
-			return binary.Write(buf, getEndianness(tag), uint64(0))
-		}
-	case reflect.Int8:
-		_, has := tag.Lookup("bits")
-		if has {
-			return fmt.Errorf("bits not supported on int8")
-		}
-		sizeMap[fieldName] = 0
-		return binary.Write(buf, getEndianness(tag), int8(0))
-	case reflect.Int16:
-		_, has := tag.Lookup("bits")
-		if has {
-			return fmt.Errorf("bits not supported on int16")
-		}
-		sizeMap[fieldName] = 0
-		return binary.Write(buf, getEndianness(tag), int16(0))
-	case reflect.Int32:
-		_, has := tag.Lookup("bits")
-		if has {
-			return fmt.Errorf("bits not supported on int32")
-		}
-		sizeMap[fieldName] = 0
-		return binary.Write(buf, getEndianness(tag), int32(0))
-	case reflect.Int64:
-		_, has := tag.Lookup("bits")
-		if has {
-			return fmt.Errorf("bits not supported on int64")
-		}
-		sizeMap[fieldName] = 0
-		return binary.Write(buf, getEndianness(tag), int64(0))
-	default:
-		return fmt.Errorf("%v not supported", t)
 	}
 
+	// else endianness == binary.BigEndian
+	stack := make([][]bool, 0)
+	for start := 0; start < numOfBits; start += 8 {
+		end := start + 8
+		if end > numOfBits {
+			end = numOfBits
+		}
+		stack = append(stack, bits[start:end])
+	}
+
+	for i := len(stack)/2 - 1; i >= 0; i-- {
+		opp := len(stack) - 1 - i
+		stack[i], stack[opp] = stack[opp], stack[i]
+	}
+	for _, item := range stack {
+		n, err := buf.WriteBits(item)
+		if err != nil {
+			return err
+		}
+		if n != len(item) {
+			return fmt.Errorf("only %v of %v bits written", n, numOfBits)
+		}
+	}
+	//for i := len(bits)/2 - 1; i >= 0; i-- {
+	//	opp := len(bits) - 1 - i
+	//	bits[i], bits[opp] = bits[opp], bits[i]
+	//}
+	//n, err := buf.WriteBits(bits)
+	//if err != nil {
+	//	return err
+	//}
+	//if n != numOfBits {
+	//	return fmt.Errorf("only %v of %v bits written", n, numOfBits)
+	//}
 	return nil
+
 }
 
-func getEndianness(tag reflect.StructTag) binary.ByteOrder {
+func readBits(buf internal.BitSetReader, numOfBits int, endianness binary.ByteOrder) (uint64, error) {
+	bits := make([]bool, numOfBits)
+	n, err := buf.ReadBits(bits)
+	if err != nil {
+		return 0, err
+	}
+	if n != numOfBits {
+		return 0, fmt.Errorf("only %v of %v bits read", n, numOfBits)
+	}
+
+	if endianness == binary.LittleEndian {
+		value := uint64(0)
+		for i := 0; i < numOfBits; i++ {
+			if bits[i] {
+				value += 1 << i
+			}
+		}
+		return value, nil
+	}
+
+	//we need to undo the byte swapping for
+	var value uint64
+	byteIndex := uint64(0)
+	for end := numOfBits; end >= 0; end -= 8 {
+		start := end - 8
+		if start < 0 {
+			start = 0
+		}
+		bytes := bits[start:end]
+		for i := 0; i < len(bytes); i++ {
+			if bytes[i] {
+				value += (1 << i) << (8 * byteIndex)
+			}
+		}
+		byteIndex++
+	}
+
+	return value, nil
+}
+
+func getEndianness(tag reflect.StructTag) (binary.ByteOrder, error) {
 	value, ok := tag.Lookup("endian")
 	if !ok {
-		return binary.LittleEndian
+		return binary.LittleEndian, nil
 	}
 	switch value {
 	case "little":
-		return binary.LittleEndian
+		return binary.LittleEndian, nil
 	case "big":
-		return binary.BigEndian
+		return binary.BigEndian, nil
 	}
 
-	panic("endian only supports values of `little` or `big`")
+	return binary.LittleEndian, fmt.Errorf("unsupported endian value: %v", value)
 }
 
-func getBits(tag reflect.StructTag, sizeMap map[string]int64, limit uint64) (int, bool, error) {
+func getBits(tag reflect.StructTag, sizeMap map[string]int, limit uint64) (int, bool, error) {
 	s, ok := tag.Lookup("bits")
 	if !ok {
 		return 0, false, nil
@@ -421,7 +434,6 @@ func Decode(data []byte, v interface{}) error {
 	for i := 0; i < vOf.NumField(); i++ {
 		sf := tOf.Field(i)
 		vf := vOf.Field(i)
-		fmt.Printf("Start : %v || %v\n", sf.Type, vf)
 		err := decode(sf.Name, sf.Type, vf, sf.Tag, buf, sizeMap)
 		if err != nil {
 			return err
@@ -432,7 +444,11 @@ func Decode(data []byte, v interface{}) error {
 }
 
 func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf *internal.BitSetBuffer, sizeMap map[string]int) error {
-	endianness := getEndianness(tag)
+	endianness, err := getEndianness(tag)
+	if err != nil {
+		return fmt.Errorf("%v: %v", fieldName, err)
+	}
+
 	switch t.Kind() {
 	case reflect.Ptr:
 		val := reflect.New(t.Elem())
@@ -441,7 +457,6 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 			return err
 		}
 		v.Set(val)
-		return nil
 	case reflect.Struct:
 		sizeMap := map[string]int{}
 		for i := 0; i < v.NumField(); i++ {
@@ -451,7 +466,6 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 			if err != nil {
 				return err
 			}
-
 		}
 	case reflect.Array:
 		for i := 0; i < v.Len(); i++ {
@@ -460,7 +474,6 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 				return err
 			}
 		}
-		return nil
 	case reflect.Slice:
 		all := true
 		suint := 0
@@ -514,74 +527,165 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 			}
 			all = false
 		}
-		s := ""
-		for i := 0; i < int(suint) || (all); i++ {
-			b, ok := buf.ReadByte()
-			if !ok {
-				if i == 0 {
-					return fmt.Errorf("error reading value for %v", fieldName)
+
+		if all {
+			sb := strings.Builder{}
+
+			for {
+				bs := make([]byte, suint)
+				n, err := buf.Read(bs)
+				if err != nil {
+					return fmt.Errorf("%v: %v", fieldName, err)
 				}
-				break
+				if n != len(bs) {
+					sb.Write(bs[:n])
+					break
+				}
+				sb.Write(bs)
 			}
-			s += string(b)
+
+			v.SetString(sb.String())
+		} else {
+			bs := make([]byte, suint)
+			err := binary.Read(buf, endianness, bs)
+			if err != nil {
+				return fmt.Errorf("%v: %v", fieldName, err)
+			}
+			v.SetString(string(bs))
+		}
+	case reflect.Bool:
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 8)
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
-		v.SetString(s)
+		var x bool
+		if hasBits {
+			tmp, err := readBits(buf, numOfBits, endianness)
+			if err != nil {
+				return fmt.Errorf("%v: %v", fieldName, err)
+			}
+			x = tmp > 0
+		} else {
+			if err := binary.Read(buf, endianness, &x); err != nil {
+				return fmt.Errorf("expected to read bool from %v: %v", fieldName, err)
+			}
+		}
 
+		v.SetBool(x)
 	case reflect.Uint8:
-		x, ok := buf.ReadUint8()
-		if !ok {
-			return fmt.Errorf("expected to read uint64 from %v", fieldName)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 8)
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
+
+		var x uint8
+		if hasBits {
+			tmp, err := readBits(buf, numOfBits, endianness)
+			if err != nil {
+				return fmt.Errorf("%v: %v", fieldName, err)
+			}
+			x = uint8(tmp)
+		} else {
+			if err := binary.Read(buf, endianness, &x); err != nil {
+				return fmt.Errorf("expected to read uint8 from %v: %v", fieldName, err)
+			}
+		}
+
 		sizeMap[fieldName] = int(x)
 		v.SetUint(uint64(x))
 	case reflect.Uint16:
-		x, ok := buf.ReadUint16(endianness)
-		if !ok {
-			return fmt.Errorf("expected to read uint64 from %v", fieldName)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 16)
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
+
+		var x uint16
+		if hasBits {
+			tmp, err := readBits(buf, numOfBits, endianness)
+			if err != nil {
+				return fmt.Errorf("%v: %v", fieldName, err)
+			}
+			x = uint16(tmp)
+		} else {
+			if err := binary.Read(buf, endianness, &x); err != nil {
+				return fmt.Errorf("expected to read uint16 from %v: %v", fieldName, err)
+			}
+		}
+
 		sizeMap[fieldName] = int(x)
 		v.SetUint(uint64(x))
 	case reflect.Uint32:
-		x, ok := buf.ReadUint32(endianness)
-		if !ok {
-			return fmt.Errorf("expected to read uint64 from %v", fieldName)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 32)
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
+
+		var x uint32
+		if hasBits {
+			tmp, err := readBits(buf, numOfBits, endianness)
+			if err != nil {
+				return fmt.Errorf("%v: %v", fieldName, err)
+			}
+			x = uint32(tmp)
+		} else {
+			if err := binary.Read(buf, endianness, &x); err != nil {
+				return fmt.Errorf("expected to read uint32 from %v: %v", fieldName, err)
+			}
+		}
+
 		sizeMap[fieldName] = int(x)
 		v.SetUint(uint64(x))
 	case reflect.Uint64:
-		x, ok := buf.ReadUint64(endianness)
-		if !ok {
-			return fmt.Errorf("expected to read uint64 from %v", fieldName)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 64)
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
+
+		var x uint64
+		if hasBits {
+			x, err = readBits(buf, numOfBits, endianness)
+			if err != nil {
+				return fmt.Errorf("%v: %v", fieldName, err)
+			}
+		} else {
+			if err := binary.Read(buf, endianness, &x); err != nil {
+				return fmt.Errorf("expected to read uint64 from %v: %v", fieldName, err)
+			}
+		}
+
 		sizeMap[fieldName] = int(x)
 		v.SetUint(x)
 	case reflect.Int8:
-		x, ok := buf.ReadInt8()
-		if !ok {
-			return fmt.Errorf("expected to read uint64 from %v", fieldName)
+		var x int8
+		if err := binary.Read(buf, endianness, &x); err != nil {
+			return fmt.Errorf("expected to read int8 from %v: %v", fieldName, err)
 		}
+
 		sizeMap[fieldName] = int(x)
 		v.SetInt(int64(x))
 	case reflect.Int16:
-		x, ok := buf.ReadInt16(endianness)
-		if !ok {
-			return fmt.Errorf("expected to read uint64 from %v", fieldName)
+		var x int16
+		if err := binary.Read(buf, endianness, &x); err != nil {
+			return fmt.Errorf("expected to read int16 from %v: %v", fieldName, err)
 		}
+
 		sizeMap[fieldName] = int(x)
 		v.SetInt(int64(x))
 	case reflect.Int32:
-		x, ok := buf.ReadInt32(endianness)
-		if !ok {
-			return fmt.Errorf("expected to read uint64 from %v", fieldName)
+		var x int32
+		if err := binary.Read(buf, endianness, &x); err != nil {
+			return fmt.Errorf("expected to read int32 from %v: %v", fieldName, err)
 		}
+
 		sizeMap[fieldName] = int(x)
 		v.SetInt(int64(x))
 	case reflect.Int64:
-		x, ok := buf.ReadInt64(endianness)
-		if !ok {
-			return fmt.Errorf("expected to read uint64 from %v", fieldName)
+		var x int64
+		if err := binary.Read(buf, endianness, &x); err != nil {
+			return fmt.Errorf("expected to read int64 from %v: %v", fieldName, err)
 		}
+
 		sizeMap[fieldName] = int(x)
 		v.SetInt(x)
 	default:

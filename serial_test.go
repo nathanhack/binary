@@ -33,7 +33,7 @@ func TestEnc(t *testing.T) {
 		input    interface{}
 		expected []byte
 	}{
-		{
+		0: {
 			struct {
 				V0 byte   `bits:"1"`
 				V1 uint8  `bits:"1"`
@@ -68,7 +68,7 @@ func TestEnc(t *testing.T) {
 			[]byte{0, 0, 0, 0, 0, 0},
 		},
 
-		{
+		1: {
 			struct {
 				V0  byte
 				V1  uint8
@@ -152,50 +152,50 @@ func TestEnc(t *testing.T) {
 				0,
 			},
 		},
-		{
+		2: {
 			struct {
 				V1 string `strlen:"4"`
 			}{"Hello"},
 			[]byte("Hell"),
 		},
-		{
+		3: {
 			struct {
 				V1 string
 			}{"Hello"},
 			[]byte("Hello"),
 		},
-		{
+		4: {
 			struct {
 				V1 string `strlen:"4"`
 			}{},
 			[]byte{32, 32, 32, 32},
 		},
-		{
+		5: {
 			struct {
 				V1 string
 			}{},
 			[]byte{},
 		},
-		{
+		6: {
 			struct {
 				V1 []int
 			}{},
 			[]byte{},
 		},
-		{
+		7: {
 			struct {
 				V1 int16
 				V2 []int
 			}{},
 			[]byte{0, 0},
 		},
-		{
+		8: {
 			struct {
 				V1 [4]int32 `endian:"big"`
 			}{},
 			[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 		},
-		{
+		9: {
 			struct {
 				V1 [4]int32 `endian:"big"`
 			}{
@@ -203,11 +203,11 @@ func TestEnc(t *testing.T) {
 			},
 			[]byte{0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4},
 		},
-		{
+		10: {
 			Thing{},
 			[]byte{0, 0, 0, 0, 0},
 		},
-		{
+		11: {
 			struct {
 				V1 Thing
 				V2 struct {
@@ -216,14 +216,14 @@ func TestEnc(t *testing.T) {
 			}{},
 			[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 		},
-		{
+		12: {
 			&Thing{
 				V1: 0,
 				V2: []byte{1, 2, 3, 4},
 			},
 			[]byte{0, 1, 2, 3, 4},
 		},
-		{
+		13: {
 			struct {
 				V1 byte
 				V2 []byte `size:"4"`
@@ -233,7 +233,7 @@ func TestEnc(t *testing.T) {
 			},
 			[]byte{0, 1, 2, 3, 4},
 		},
-		{
+		14: {
 			struct {
 				V1 byte
 				V2 []byte `size:"2"`
@@ -243,7 +243,7 @@ func TestEnc(t *testing.T) {
 			},
 			[]byte{0, 1, 2},
 		},
-		{
+		15: {
 			struct {
 				V1 int32
 				V2 int64
@@ -253,7 +253,7 @@ func TestEnc(t *testing.T) {
 			},
 			[]byte{1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0},
 		},
-		{
+		16: {
 			struct {
 				V1 int32 `endian:"big"`
 				V2 int64 `endian:"little"`
@@ -263,7 +263,7 @@ func TestEnc(t *testing.T) {
 			},
 			[]byte{0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0},
 		},
-		{
+		17: {
 			struct {
 				V1 struct {
 					I0 int32 //note the struct's endian tag is ignored (defaults to little)
@@ -279,7 +279,7 @@ func TestEnc(t *testing.T) {
 			},
 			[]byte{1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0},
 		},
-		{
+		18: {
 			struct {
 				V1 *int32
 				V2 [1]*int64
@@ -287,7 +287,7 @@ func TestEnc(t *testing.T) {
 			[]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 		},
 
-		{
+		19: {
 			struct {
 				V1 int32
 				V2 []int32 `size:"V1"`
@@ -295,7 +295,7 @@ func TestEnc(t *testing.T) {
 			[]byte{0, 0, 0, 0},
 		},
 
-		{
+		20: {
 			struct {
 				V1 int32
 				V2 []int32 `size:"V1"`
@@ -343,22 +343,22 @@ func TestDecode2(t *testing.T) {
 		input interface{}
 		empty func() interface{}
 	}{
-		{
-			&struct {
-				V0 *struct{ I0 uint32 }
-				V1 []*struct{ I1 byte } `size:"1"`
-			}{
-				&struct{ I0 uint32 }{1},
-				[]*struct{ I1 byte }{{22}},
-			},
-			func() interface{} {
-				var i struct {
-					V0 *struct{ I0 uint32 }
-					V1 []*struct{ I1 byte } `size:"1"`
-				}
-				return &i
-			},
-		},
+		//{
+		//	&struct {
+		//		V0 *struct{ I0 uint32 }
+		//		V1 []*struct{ I1 byte } `size:"1"`
+		//	}{
+		//		&struct{ I0 uint32 }{1},
+		//		[]*struct{ I1 byte }{{22}},
+		//	},
+		//	func() interface{} {
+		//		var i struct {
+		//			V0 *struct{ I0 uint32 }
+		//			V1 []*struct{ I1 byte } `size:"1"`
+		//		}
+		//		return &i
+		//	},
+		//},
 		{
 			&struct {
 				V1  byte
@@ -402,6 +402,7 @@ func TestDecode2(t *testing.T) {
 				V39 struct{ I3 struct{ I4 byte } }
 				V40 *struct{ I0 uint32 }
 				V41 []*struct{ I1 byte } `size:"1"`
+				V42 bool
 			}{
 				1,
 				2,
@@ -444,6 +445,7 @@ func TestDecode2(t *testing.T) {
 				struct{ I3 struct{ I4 byte } }{struct{ I4 byte }{39}},
 				&struct{ I0 uint32 }{1},
 				[]*struct{ I1 byte }{{22}},
+				true,
 			},
 			func() interface{} {
 				var i struct {
@@ -488,6 +490,7 @@ func TestDecode2(t *testing.T) {
 					V39 struct{ I3 struct{ I4 byte } }
 					V40 *struct{ I0 uint32 }
 					V41 []*struct{ I1 byte } `size:"1"`
+					V42 bool
 				}
 				return &i
 			},
@@ -510,5 +513,128 @@ func TestDecode2(t *testing.T) {
 				t.Fatalf("expected \n%+v\n but found \n%+v\n", test.input, e)
 			}
 		})
+	}
+}
+
+func TestDecodeNestedStructSlices(t *testing.T) {
+	type Stuff struct {
+		Z0 byte
+		V1 []byte `size:"Z0"`
+		V2 [3]byte
+		V3 []byte `size:"3"`
+	}
+
+	type Output struct {
+		V0  uint32
+		V2  []byte `size:"V0"`
+		V3  uint32
+		V44 []Stuff `size:"1"`
+		V5  []byte  `size:"16"`
+		V6  []byte  `size:"V3"`
+	}
+	o1 := Output{
+		V0: 3,
+		V2: []byte{2, 2, 2, 2, 2, 2, 2, 2, 2}, //truncates to len()==V0
+		V3: 3,
+		V6: []byte{6}, //adds zeros to len()==V3
+	}
+	bs, err := Encode(o1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var o2 Output
+	err = Decode(bs, &o2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := Output{
+		V0:  3,
+		V2:  []byte{2, 2, 2},
+		V3:  3,
+		V44: []Stuff{{Z0: 0, V1: []byte{}, V2: [3]byte{0, 0, 0}, V3: []byte{0, 0, 0}}},
+		V5:  []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		V6:  []byte{6, 0, 0},
+	}
+
+	if !reflect.DeepEqual(expected, o2) {
+		t.Fatalf("expected %v but found %v", expected, o2)
+	}
+}
+
+func TestDecodeExampleIpv4Header(t *testing.T) {
+	type IpHeader struct {
+		IHL            uint8  `bits:"4" ` //note IHL & Ver seem out of order, it's due to when bytes are written
+		Version        uint8  `bits:"4" ` //note IHL & Ver seem out of order, it's due to when bytes are written
+		ECN            uint8  `bits:"2" ` //note ECN & DSCP order are swapped, because of the way bytes are written
+		DSCP           uint8  `bits:"6" ` //note ECN & DSCP order are swapped, because of the way bytes are written
+		Length         uint16 `endian:"big"`
+		Identification uint16 `endian:"big"`
+		Reserved       bool   `bits:"1"`
+		DontFrag       bool   `bits:"1"`
+		MoreFrag       bool   `bits:"1"`
+		FragOffset     uint16 `bits:"13" endian:"big"`
+		TTL            uint8  `endian:"big"`
+		Protocol       uint8  `endian:"big"`
+		Checksum       uint16 `endian:"big"`
+		Source         uint32 `endian:"big"`
+		Destination    uint32 `endian:"big"`
+	}
+
+	o1 := IpHeader{
+		Version:        4,
+		IHL:            5,
+		DSCP:           0,
+		ECN:            0,
+		Length:         24,
+		Identification: 242,
+		Reserved:       false,
+		DontFrag:       false,
+		MoreFrag:       false,
+		FragOffset:     3,
+		TTL:            64,
+		Protocol:       17,
+		Checksum:       0xcf54,
+		Source:         0x0a010101, //10.1.1.1
+		Destination:    0x0a010101, //10.1.1.1
+	}
+	bs, err := Encode(o1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedBs := []byte{0x45, 0x00, 0x00, 0x18, 0x00, 0xf2, 0x00, 0x03, 0x40, 0x11, 0xcf, 0x54, 0x0a, 0x01, 0x01, 0x01, 0x0a, 0x01, 0x01, 0x01}
+
+	if !reflect.DeepEqual(bs, expectedBs) {
+		t.Fatalf("expected \n%x\n but found \n%x\n", expectedBs, bs)
+	}
+
+	var o2 IpHeader
+	err = Decode(bs, &o2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := IpHeader{
+		Version:        4,
+		IHL:            5,
+		DSCP:           0,
+		ECN:            0,
+		Length:         24,
+		Identification: 242,
+		Reserved:       false,
+		DontFrag:       false,
+		MoreFrag:       false,
+		FragOffset:     3,
+		TTL:            64,
+		Protocol:       17,
+		Checksum:       0xcf54,
+		Source:         0x0a010101,
+		Destination:    0x0a010101,
+	}
+
+	if !reflect.DeepEqual(expected, o2) {
+		t.Fatalf("expected %v but found %v", expected, o2)
 	}
 }

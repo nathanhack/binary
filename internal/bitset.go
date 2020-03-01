@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 )
@@ -170,80 +169,4 @@ func (bsb *BitSetBuffer) Bytes() []byte {
 		buf = append(buf, bsb.readByte())
 	}
 	return buf
-}
-
-func (bsb *BitSetBuffer) ReadByte() (byte, bool) {
-	return bsb.ReadUint8()
-}
-
-func (bsb *BitSetBuffer) ReadUint8() (uint8, bool) {
-	var b uint8
-	if err := binary.Read(bsb, binary.LittleEndian, &b); err != nil {
-		return 0, false
-	}
-
-	return b, true
-}
-
-func (bsb *BitSetBuffer) ReadUint16(order binary.ByteOrder) (uint16, bool) {
-	var b uint16
-	if err := binary.Read(bsb, order, &b); err != nil {
-		return 0, false
-	}
-
-	return b, true
-}
-
-func (bsb *BitSetBuffer) ReadUint32(order binary.ByteOrder) (uint32, bool) {
-	var b uint32
-	if err := binary.Read(bsb, order, &b); err != nil {
-		return 0, false
-	}
-
-	return b, true
-}
-
-func (bsb *BitSetBuffer) ReadUint64(order binary.ByteOrder) (uint64, bool) {
-	var b uint64
-	if err := binary.Read(bsb, order, &b); err != nil {
-		return 0, false
-	}
-
-	return b, true
-}
-
-func (bsb *BitSetBuffer) ReadInt8() (int8, bool) {
-	var b int8
-	if err := binary.Read(bsb, binary.LittleEndian, &b); err != nil {
-		return 0, false
-	}
-
-	return b, true
-}
-
-func (bsb *BitSetBuffer) ReadInt16(order binary.ByteOrder) (int16, bool) {
-	var b int16
-	if err := binary.Read(bsb, order, &b); err != nil {
-		return 0, false
-	}
-
-	return b, true
-}
-
-func (bsb *BitSetBuffer) ReadInt32(order binary.ByteOrder) (int32, bool) {
-	var b int32
-	if err := binary.Read(bsb, order, &b); err != nil {
-		return 0, false
-	}
-
-	return b, true
-}
-
-func (bsb *BitSetBuffer) ReadInt64(order binary.ByteOrder) (int64, bool) {
-	var b int64
-	if err := binary.Read(bsb, order, &b); err != nil {
-		return 0, false
-	}
-
-	return b, true
 }
