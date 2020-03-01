@@ -269,6 +269,24 @@ func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTa
 		if err != nil {
 			return fmt.Errorf("%v : %v", fieldName, err)
 		}
+	case reflect.Float32:
+		_, has := tag.Lookup("bits")
+		if has {
+			return fmt.Errorf("bits not supported on float32")
+		}
+		err := binary.Write(buf, endianness, float32(v.Float()))
+		if err != nil {
+			return fmt.Errorf("%v : %v", fieldName, err)
+		}
+	case reflect.Float64:
+		_, has := tag.Lookup("bits")
+		if has {
+			return fmt.Errorf("bits not supported on float64")
+		}
+		err := binary.Write(buf, endianness, v.Float())
+		if err != nil {
+			return fmt.Errorf("%v : %v", fieldName, err)
+		}
 	default:
 		return fmt.Errorf("%v not supported", t)
 	}
@@ -316,19 +334,8 @@ func writeBits(buf internal.BitSetWriter, numOfBits int, endianness binary.ByteO
 			return fmt.Errorf("only %v of %v bits written", n, numOfBits)
 		}
 	}
-	//for i := len(bits)/2 - 1; i >= 0; i-- {
-	//	opp := len(bits) - 1 - i
-	//	bits[i], bits[opp] = bits[opp], bits[i]
-	//}
-	//n, err := buf.WriteBits(bits)
-	//if err != nil {
-	//	return err
-	//}
-	//if n != numOfBits {
-	//	return fmt.Errorf("only %v of %v bits written", n, numOfBits)
-	//}
-	return nil
 
+	return nil
 }
 
 func readBits(buf internal.BitSetReader, numOfBits int, endianness binary.ByteOrder) (uint64, error) {
@@ -398,7 +405,7 @@ func getBits(tag reflect.StructTag, sizeMap map[string]int, limit uint64) (int, 
 		case !has:
 			return 0, true, fmt.Errorf("bits must either be a positive number or a field found prior to this field :%v", err)
 		case i < 0:
-			return 0, true, fmt.Errorf("value of %v is %v,to be used for size it must be nonnegative for bits", s, i)
+			return 0, true, fmt.Errorf("value of %v is %v,to be used for size it must be positive for bits", s, i)
 		}
 
 		value = uint64(i)
@@ -688,6 +695,20 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 
 		sizeMap[fieldName] = int(x)
 		v.SetInt(x)
+	case reflect.Float32:
+		var x float32
+		if err := binary.Read(buf, endianness, &x); err != nil {
+			return fmt.Errorf("expected to read float32 from %v: %v", fieldName, err)
+		}
+
+		v.SetFloat(float64(x))
+	case reflect.Float64:
+		var x float64
+		if err := binary.Read(buf, endianness, &x); err != nil {
+			return fmt.Errorf("expected to read float64 from %v: %v", fieldName, err)
+		}
+
+		v.SetFloat(x)
 	default:
 		return fmt.Errorf("%v not supported", t)
 	}

@@ -304,6 +304,24 @@ func TestEnc(t *testing.T) {
 			},
 			[]byte{1, 0, 0, 0, 0, 0, 0, 0},
 		},
+		21: {
+			struct {
+				V1 float32
+				V2 float64
+				V3 float32 `endian:"little"`
+				V4 float64 `endian:"big"`
+				V5 float32 `endian:"big"`
+				V6 float64 `endian:"little"`
+			}{0, 0, 1, 1, 1, 1},
+			[]byte{
+				0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 128, 63,
+				63, 240, 0, 0, 0, 0, 0, 0,
+				63, 128, 0, 0,
+				0, 0, 0, 0, 0, 0, 240, 63,
+			},
+		},
 	}
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -343,33 +361,87 @@ func TestDecode2(t *testing.T) {
 		input interface{}
 		empty func() interface{}
 	}{
-		//{
-		//	&struct {
-		//		V0 *struct{ I0 uint32 }
-		//		V1 []*struct{ I1 byte } `size:"1"`
-		//	}{
-		//		&struct{ I0 uint32 }{1},
-		//		[]*struct{ I1 byte }{{22}},
-		//	},
-		//	func() interface{} {
-		//		var i struct {
-		//			V0 *struct{ I0 uint32 }
-		//			V1 []*struct{ I1 byte } `size:"1"`
-		//		}
-		//		return &i
-		//	},
-		//},
 		{
 			&struct {
-				V1  byte
-				V2  uint8
-				V3  uint16
-				V4  uint32
-				V5  uint64
-				V6  int8
-				V7  int16
-				V8  int32
-				V9  int64
+				V0  uint16  `endian:"little"`
+				V1  uint32  `endian:"little"`
+				V2  uint64  `endian:"little"`
+				V3  int16   `endian:"little"`
+				V4  int32   `endian:"little"`
+				V5  int64   `endian:"little"`
+				V6  float32 `endian:"little"`
+				V7  float64 `endian:"little"`
+				V8  uint16  `endian:"big"`
+				V9  uint32  `endian:"big"`
+				V10 uint64  `endian:"big"`
+				V11 int16   `endian:"big"`
+				V12 int32   `endian:"big"`
+				V13 int64   `endian:"big"`
+				V14 float32 `endian:"big"`
+				V15 float64 `endian:"big"`
+				V16 bool
+			}{
+				V0:  0xAB,
+				V1:  0xABCD,
+				V2:  0xABCDEFA,
+				V3:  0xAB,
+				V4:  0xABCD,
+				V5:  0xABCDEFA,
+				V6:  1.9999999,
+				V7:  1.9999999,
+				V8:  0xAB,
+				V9:  0xABCD,
+				V10: 0xABCDEFA,
+				V11: 0xAB,
+				V12: 0xABCD,
+				V13: 0xABCDEFA,
+				V14: 1.9999999,
+				V15: 1.9999999,
+				V16: true,
+			},
+			func() interface{} {
+				var i struct {
+					V0  uint16  `endian:"little"`
+					V1  uint32  `endian:"little"`
+					V2  uint64  `endian:"little"`
+					V3  int16   `endian:"little"`
+					V4  int32   `endian:"little"`
+					V5  int64   `endian:"little"`
+					V6  float32 `endian:"little"`
+					V7  float64 `endian:"little"`
+					V8  uint16  `endian:"big"`
+					V9  uint32  `endian:"big"`
+					V10 uint64  `endian:"big"`
+					V11 int16   `endian:"big"`
+					V12 int32   `endian:"big"`
+					V13 int64   `endian:"big"`
+					V14 float32 `endian:"big"`
+					V15 float64 `endian:"big"`
+					V16 bool
+				}
+				return &i
+			},
+		},
+		{
+			&struct {
+				V0 *struct{ I0 uint32 }
+				V1 []*struct{ I1 byte } `size:"1"`
+			}{
+				&struct{ I0 uint32 }{1},
+				[]*struct{ I1 byte }{{22}},
+			},
+			func() interface{} {
+				var i struct {
+					V0 *struct{ I0 uint32 }
+					V1 []*struct{ I1 byte } `size:"1"`
+				}
+				return &i
+			},
+		},
+		{
+			&struct {
+				V1  uint16
+				V2  int32
 				V10 string `strlen:"2"`
 				V11 struct{ I0 byte }
 				V12 [1]byte
@@ -402,17 +474,9 @@ func TestDecode2(t *testing.T) {
 				V39 struct{ I3 struct{ I4 byte } }
 				V40 *struct{ I0 uint32 }
 				V41 []*struct{ I1 byte } `size:"1"`
-				V42 bool
 			}{
-				1,
 				2,
-				3,
-				4,
-				5,
-				6,
-				7,
-				8,
-				9,
+				1,
 				"10",
 				struct{ I0 byte }{11},
 				[1]byte{12},
@@ -426,8 +490,8 @@ func TestDecode2(t *testing.T) {
 				[1]int64{20},
 				[1]string{"21"},
 				[1]struct{ I1 byte }{{22}},
-				[]byte{23},
-				[]uint8{24, 25},
+				[]byte{23, 0},
+				[]uint8{24},
 				[]uint16{25},
 				[]uint32{26},
 				[]uint64{27},
@@ -445,19 +509,11 @@ func TestDecode2(t *testing.T) {
 				struct{ I3 struct{ I4 byte } }{struct{ I4 byte }{39}},
 				&struct{ I0 uint32 }{1},
 				[]*struct{ I1 byte }{{22}},
-				true,
 			},
 			func() interface{} {
 				var i struct {
-					V1  byte
-					V2  uint8
-					V3  uint16
-					V4  uint32
-					V5  uint64
-					V6  int8
-					V7  int16
-					V8  int32
-					V9  int64
+					V1  uint16
+					V2  int32
 					V10 string `strlen:"2"`
 					V11 struct{ I0 byte }
 					V12 [1]byte
@@ -490,7 +546,6 @@ func TestDecode2(t *testing.T) {
 					V39 struct{ I3 struct{ I4 byte } }
 					V40 *struct{ I0 uint32 }
 					V41 []*struct{ I1 byte } `size:"1"`
-					V42 bool
 				}
 				return &i
 			},
