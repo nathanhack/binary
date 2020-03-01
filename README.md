@@ -54,7 +54,7 @@ expected := Thing{
 ## Tags
 Tags are annotations to specify specific handling for each field.  All tags are case sensitive. 
 
-### endian
+#### endian
 When a integer value larger than 8bits is tagged with ``` `endian:"little"` ``` or ``` `endian:"big"` ``` (note case does matter).
 
 #### size
