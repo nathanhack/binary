@@ -58,7 +58,10 @@ Tags are annotations to specify specific handling for each field.  All tags are 
 When a integer value larger than 8bits is tagged with ``` `endian:"little"` ``` or ``` `endian:"big"` ``` (note case does matter).
 
 ####size
-When a slice is tagged with ``` `size:"X"` ``` it enforces a size requirement upon the slice.  This This means if the slice has a length bigger than `X` then it will only serialize the first `X` items of the slice; additionally, if the slice's length is smaller than `X` then it will serialize zero initialized items until the size requirement is met. Note the `X` can either be a positive integer or an integer field name in the struct that occurs before the current field.
+When a slice is tagged with ``` `size:"X"` ``` it enforces a size requirement upon the slice.  This means if the slice has a length bigger than `X` then it will only serialize the first `X` items of the slice; additionally, if the slice's length is smaller than `X` then it will serialize zero initialized items until the size requirement is met. Note the `X` can either be a positive integer or an integer field name in the struct that occurs before the current field.
+
+####strlen
+When a string is tagged with ``` `strlen:"X"` ``` it enforces a length requiement upon the string. This means if the string has a length larger than `X` then it will only serialize the first `X` bytes of the string; additionally, if the string's length is smaller than `X` then it will serialize the space char ```   ``` until the size requirement is met. Note the `X` can either be a positive integer or an integer field name in the struct that occurs before the current field.
 
 ####bits
 When an unsigned integer or `bool` field is tagged with ``` `bits:"X" ``` then the number will be serialized into `X` number of bits. `X` must be a positive integer value and must be equal to or smaller than the max number of bits for the field (ie. `8` bits for an `uint8`). Note the `X` can either be a positive integer or an integer field name in the struct that occurs before the current field.
@@ -97,7 +100,7 @@ Where as in big endian the most significant byte come first thus one would expec
 
 ##Supported field types
 
-`bool`, `uint8`, `uint16`, `uint32`, `uint64`, `int8`, `int16`, `int32`, `int64`, `float32`, `float64`, `struct`, slices, and arrays 
+`bool`, `uint8`, `uint16`, `uint32`, `uint64`, `int8`, `int16`, `int32`, `int64`, `float32`, `float64`, `struct`, `string`, slices, and arrays 
 
 ##Unsupported field types
 
