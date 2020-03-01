@@ -2,7 +2,7 @@
 A simple binary serialization of structs to byte aligned binary output.
 
 
-# Getting Started
+## Getting Started
 
 #### Import
 Import the library `import "github.com/nathanhack/binary"`.
