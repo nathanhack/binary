@@ -693,3 +693,38 @@ func TestDecodeExampleIpv4Header(t *testing.T) {
 		t.Fatalf("expected %v but found %v", expected, o2)
 	}
 }
+
+func TestSizeOf(t *testing.T) {
+
+	type T1 struct {
+		I0  bool
+		I1  int8
+		I2  int16
+		I3  int32
+		I4  int64
+		I5  uint8
+		I6  uint16
+		I7  uint32
+		I8  uint64
+		I9  bool     `bits:"1"`
+		I10 uint8    `bits:"1"`
+		I11 uint16   `bits:"1"`
+		I12 uint32   `bits:"1"`
+		I13 uint64   `bits:"1"`
+		I14 string   `strlen:"1"'`
+		I15 []uint8  `size:"1"`
+		I16 []uint64 `size:"1"`
+	}
+	expect := 42
+	b := T1{}
+
+	actual := SizeOf(b)
+	if actual != expect {
+		t.Fatalf("expected %v but found %v", expect, actual)
+	}
+
+	actual = SizeOf(&b)
+	if actual != expect {
+		t.Fatalf("expected %v but found %v", expect, actual)
+	}
+}
