@@ -714,9 +714,14 @@ func TestSizeOf(t *testing.T) {
 		I14 string   `strlen:"1"'`
 		I15 []uint8  `size:"1"`
 		I16 []uint64 `size:"1"`
+		I17 string   `strlen:"I6"`
+		I18 []uint8  `size:"I7"`
 	}
-	expect := 42
-	b := T1{}
+	expect := 46
+	b := T1{
+		I6: 2,
+		I7: 2,
+	}
 
 	actual := SizeOf(b)
 	if actual != expect {
@@ -724,6 +729,14 @@ func TestSizeOf(t *testing.T) {
 	}
 
 	actual = SizeOf(&b)
+	if actual != expect {
+		t.Fatalf("expected %v but found %v", expect, actual)
+	}
+
+	b.I14 = "morethanone"
+	b.I15 = []uint8{1, 2, 3, 4, 5}
+	b.I16 = []uint64{1, 2, 3, 4, 5}
+	actual = SizeOf(b)
 	if actual != expect {
 		t.Fatalf("expected %v but found %v", expect, actual)
 	}

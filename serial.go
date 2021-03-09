@@ -641,7 +641,6 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 				return fmt.Errorf("expected to read uint32 from %v: %v", fieldName, err)
 			}
 		}
-
 		sizeMap[fieldName] = int(x)
 		v.SetUint(uint64(x))
 	case reflect.Uint64:
@@ -766,16 +765,17 @@ func SizeOf(v interface{}) int {
 	}
 
 	size := 0
+	sizeMap := map[string]int{}
 	for i := 0; i < vOf.NumField(); i++ {
 		sf := tOf.Field(i)
 		vf := vOf.Field(i)
-		size += sizeOf(sf.Name, sf.Type, vf, sf.Tag)
+		size += sizeOf(sf.Name, sf.Type, vf, sf.Tag, sizeMap)
 	}
 
 	return int(math.Ceil(float64(size) / 8))
 }
 
-func sizeOf(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag) int {
+func sizeOf(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, sizeMap map[string]int) int {
 	_, err := getEndianness(tag)
 	if err != nil {
 		panic(fmt.Sprintf("%v: %v", fieldName, err))
@@ -784,31 +784,75 @@ func sizeOf(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 	switch t.Kind() {
 	case reflect.Ptr:
 		val := reflect.New(t.Elem())
-		return sizeOf(fieldName, t.Elem(), val.Elem(), tag)
+		return sizeOf(fieldName, t.Elem(), val.Elem(), tag, sizeMap)
 	case reflect.Struct:
-		for i := 0; i < v.NumField(); i++ {
+		m := map[string]int{}
+		for k, v := range sizeMap {
+			m[k] = v
+		}
+		for i := 0; i < t.NumField(); i++ {
 			sf := t.Field(i)
-			vf := v.Field(i)
-			size += sizeOf(sf.Name, sf.Type, vf, sf.Tag)
+			size += sizeOf(sf.Name, sf.Type, v.Field(i), sf.Tag, m)
 		}
 	case reflect.Array:
 		for i := 0; i < v.Len(); i++ {
 			item := v.Index(i)
-			size += sizeOf("", item.Type(), item, tag)
+			size += sizeOf("", item.Type(), item, tag, sizeMap)
 		}
 	case reflect.Slice:
-		suint := uint64(0)
+		itemslen := v.Len()
+		blanks := uint64(0)
 		if s, ok := tag.Lookup("size"); ok {
-			suint, _ = strconv.ParseUint(s, 10, 64)
+			suint, err := strconv.ParseUint(s, 10, 64)
+			if err != nil {
+				i, has := sizeMap[s]
+				switch {
+				case !has:
+					panic(fmt.Sprintf("size must either be a positive number or a field found prior to this field :%v", err))
+				case i < 0:
+					panic(fmt.Sprintf("value of %v is %v,to be used for size it must be nonnegative", s, i))
+				}
+				suint = uint64(i)
+			}
+			if uint64(itemslen) > suint {
+				itemslen = int(suint)
+			} else if uint64(itemslen) < suint {
+				blanks = suint - uint64(itemslen)
+			}
 		}
 
-		item := reflect.New(t.Elem())
-		size += int(suint) * sizeOf("", item.Elem().Type(), item.Elem(), tag)
-	case reflect.String:
-		if s, ok := tag.Lookup("strlen"); ok {
-			suint, _ := strconv.ParseUint(s, 10, 64)
-			size += int(suint) * 8
+		for i := 0; i < itemslen; i++ {
+			item := v.Index(i)
+			size += sizeOf("", item.Type(), item, tag, sizeMap)
 		}
+		//now we make empty items! to fill up to the size
+		for i := uint64(0); i < blanks; i++ {
+			item := reflect.New(t.Elem())
+			size += sizeOf("", t.Elem(), item.Elem(), tag, sizeMap)
+		}
+	case reflect.String:
+		s := v.String()
+		itemslen := len(s)
+		blanks := uint64(0)
+		if s, ok := tag.Lookup("strlen"); ok {
+			suint, err := strconv.ParseUint(s, 10, 64)
+			if err != nil {
+				i, has := sizeMap[s]
+				switch {
+				case !has:
+					panic(fmt.Sprintf("strlen must either be a positive number or a field found prior to this field :%v", err))
+				case i < 0:
+					panic(fmt.Sprintf("value of %v is %v, to be used for strlen it must be nonnegative", s, i))
+				}
+				suint = uint64(i)
+			}
+			if uint64(itemslen) > suint {
+				itemslen = int(suint)
+			} else if uint64(itemslen) < suint {
+				blanks = suint - uint64(itemslen)
+			}
+		}
+		size += 8 * (itemslen + int(blanks))
 	case reflect.Bool:
 		numOfBits, hasBits, err := getBits(tag, map[string]int{}, 8)
 		if err != nil {
@@ -820,7 +864,8 @@ func sizeOf(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 			size += 8
 		}
 	case reflect.Uint8:
-		numOfBits, hasBits, err := getBits(tag, map[string]int{}, 8)
+		sizeMap[fieldName] = int(v.Uint())
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 8)
 		if err != nil {
 			panic(fmt.Sprintf("%v: %v", fieldName, err))
 		}
@@ -831,7 +876,8 @@ func sizeOf(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 			size += 8
 		}
 	case reflect.Uint16:
-		numOfBits, hasBits, err := getBits(tag, map[string]int{}, 16)
+		sizeMap[fieldName] = int(v.Uint())
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 16)
 		if err != nil {
 			panic(fmt.Sprintf("%v: %v", fieldName, err))
 		}
@@ -842,7 +888,8 @@ func sizeOf(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 			size += 16
 		}
 	case reflect.Uint32:
-		numOfBits, hasBits, err := getBits(tag, map[string]int{}, 32)
+		sizeMap[fieldName] = int(v.Uint())
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 32)
 		if err != nil {
 			panic(fmt.Sprintf("%v: %v", fieldName, err))
 		}
@@ -852,7 +899,8 @@ func sizeOf(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 			size += 32
 		}
 	case reflect.Uint64:
-		numOfBits, hasBits, err := getBits(tag, map[string]int{}, 64)
+		sizeMap[fieldName] = int(v.Uint())
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 64)
 		if err != nil {
 			panic(fmt.Sprintf("%v: %v", fieldName, err))
 		}
@@ -862,37 +910,41 @@ func sizeOf(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 			size += 64
 		}
 	case reflect.Int8:
-		_, hasBits, _ := getBits(tag, map[string]int{}, 8)
+		sizeMap[fieldName] = int(v.Int())
+		_, hasBits, _ := getBits(tag, sizeMap, 8)
 		if hasBits {
 			panic(fmt.Sprintf("bits not supported with int8: %v", fieldName))
 		}
 		size += 8
 	case reflect.Int16:
-		_, hasBits, _ := getBits(tag, map[string]int{}, 16)
+		sizeMap[fieldName] = int(v.Int())
+		_, hasBits, _ := getBits(tag, sizeMap, 16)
 		if hasBits {
 			panic(fmt.Sprintf("bits not supported with int16: %v", fieldName))
 		}
 		size += 16
 	case reflect.Int32:
-		_, hasBits, _ := getBits(tag, map[string]int{}, 32)
+		sizeMap[fieldName] = int(v.Int())
+		_, hasBits, _ := getBits(tag, sizeMap, 32)
 		if hasBits {
 			panic(fmt.Sprintf("bits not supported with int32: %v", fieldName))
 		}
 		size += 32
 	case reflect.Int64:
-		_, hasBits, _ := getBits(tag, map[string]int{}, 64)
+		sizeMap[fieldName] = int(v.Int())
+		_, hasBits, _ := getBits(tag, sizeMap, 64)
 		if hasBits {
 			panic(fmt.Sprintf("bits not supported with int64: %v", fieldName))
 		}
 		size += 64
 	case reflect.Float32:
-		_, hasBits, _ := getBits(tag, map[string]int{}, 32)
+		_, hasBits, _ := getBits(tag, sizeMap, 32)
 		if hasBits {
 			panic(fmt.Sprintf("bits not supported with float32: %v", fieldName))
 		}
 		size += 32
 	case reflect.Float64:
-		_, hasBits, _ := getBits(tag, map[string]int{}, 8)
+		_, hasBits, _ := getBits(tag, sizeMap, 8)
 		if hasBits {
 			panic(fmt.Sprintf("bits not supported with float64: %v", fieldName))
 		}
@@ -900,6 +952,5 @@ func sizeOf(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 	default:
 		panic(fmt.Sprintf("%v not supported", t))
 	}
-
 	return size
 }
