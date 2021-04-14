@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/nathanhack/binary/internal"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -652,7 +653,6 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 				return fmt.Errorf("expected to read uint32 from %v: %v", fieldName, err)
 			}
 		}
-
 		sizeMap[fieldName] = int(x)
 		v.SetUint(uint64(x))
 	case reflect.Uint64:
@@ -676,6 +676,11 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 		sizeMap[fieldName] = int(x)
 		v.SetUint(x)
 	case reflect.Int8:
+		_, hasBits, _ := getBits(tag, map[string]int{}, 8)
+		if hasBits {
+			return fmt.Errorf("bits not supported with int8: %v", fieldName)
+		}
+
 		var x int8
 		if err := binary.Read(buf, endianness, &x); err != nil {
 			return fmt.Errorf("expected to read int8 from %v: %v", fieldName, err)
@@ -684,6 +689,11 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 		sizeMap[fieldName] = int(x)
 		v.SetInt(int64(x))
 	case reflect.Int16:
+		_, hasBits, _ := getBits(tag, map[string]int{}, 16)
+		if hasBits {
+			return fmt.Errorf("bits not supported with int16: %v", fieldName)
+		}
+
 		var x int16
 		if err := binary.Read(buf, endianness, &x); err != nil {
 			return fmt.Errorf("expected to read int16 from %v: %v", fieldName, err)
@@ -692,6 +702,11 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 		sizeMap[fieldName] = int(x)
 		v.SetInt(int64(x))
 	case reflect.Int32:
+		_, hasBits, _ := getBits(tag, map[string]int{}, 32)
+		if hasBits {
+			return fmt.Errorf("bits not supported with int32: %v", fieldName)
+		}
+
 		var x int32
 		if err := binary.Read(buf, endianness, &x); err != nil {
 			return fmt.Errorf("expected to read int32 from %v: %v", fieldName, err)
@@ -700,6 +715,11 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 		sizeMap[fieldName] = int(x)
 		v.SetInt(int64(x))
 	case reflect.Int64:
+		_, hasBits, _ := getBits(tag, map[string]int{}, 64)
+		if hasBits {
+			return fmt.Errorf("bits not supported with int64: %v", fieldName)
+		}
+
 		var x int64
 		if err := binary.Read(buf, endianness, &x); err != nil {
 			return fmt.Errorf("expected to read int64 from %v: %v", fieldName, err)
@@ -708,6 +728,11 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 		sizeMap[fieldName] = int(x)
 		v.SetInt(x)
 	case reflect.Float32:
+		_, hasBits, _ := getBits(tag, map[string]int{}, 32)
+		if hasBits {
+			return fmt.Errorf("bits not supported with float32: %v", fieldName)
+		}
+
 		var x float32
 		if err := binary.Read(buf, endianness, &x); err != nil {
 			return fmt.Errorf("expected to read float32 from %v: %v", fieldName, err)
@@ -715,6 +740,11 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 
 		v.SetFloat(float64(x))
 	case reflect.Float64:
+		_, hasBits, _ := getBits(tag, map[string]int{}, 64)
+		if hasBits {
+			return fmt.Errorf("bits not supported with float64: %v", fieldName)
+		}
+
 		var x float64
 		if err := binary.Read(buf, endianness, &x); err != nil {
 			return fmt.Errorf("expected to read float64 from %v: %v", fieldName, err)
@@ -726,4 +756,213 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 	}
 
 	return nil
+}
+
+//SizeOf returns the minimum number of bytes needed to serialize the structure
+func SizeOf(v interface{}) int {
+	if v == nil {
+		return 0
+	}
+
+	tOf := reflect.TypeOf(v)
+	vOf := reflect.ValueOf(v)
+
+	if vOf.Kind() != reflect.Ptr && vOf.Kind() != reflect.Struct {
+		panic("expected value to be a struct or a pointer to a struct")
+	}
+
+	if vOf.Kind() == reflect.Ptr {
+		tOf = tOf.Elem()
+		vOf = vOf.Elem()
+	}
+
+	size := 0
+	sizeMap := map[string]int{}
+	for i := 0; i < vOf.NumField(); i++ {
+		sf := tOf.Field(i)
+		vf := vOf.Field(i)
+		size += sizeOf(sf.Name, sf.Type, vf, sf.Tag, sizeMap)
+	}
+
+	return int(math.Ceil(float64(size) / 8))
+}
+
+func sizeOf(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, sizeMap map[string]int) int {
+	_, err := getEndianness(tag)
+	if err != nil {
+		panic(fmt.Sprintf("%v: %v", fieldName, err))
+	}
+	size := 0
+	switch t.Kind() {
+	case reflect.Ptr:
+		val := reflect.New(t.Elem())
+		return sizeOf(fieldName, t.Elem(), val.Elem(), tag, sizeMap)
+	case reflect.Struct:
+		m := map[string]int{}
+		for k, v := range sizeMap {
+			m[k] = v
+		}
+		for i := 0; i < t.NumField(); i++ {
+			sf := t.Field(i)
+			size += sizeOf(sf.Name, sf.Type, v.Field(i), sf.Tag, m)
+		}
+	case reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			item := v.Index(i)
+			size += sizeOf("", item.Type(), item, tag, sizeMap)
+		}
+	case reflect.Slice:
+		itemslen := v.Len()
+		blanks := uint64(0)
+		if s, ok := tag.Lookup("size"); ok {
+			suint, err := strconv.ParseUint(s, 10, 64)
+			if err != nil {
+				i, has := sizeMap[s]
+				switch {
+				case !has:
+					panic(fmt.Sprintf("size must either be a positive number or a field found prior to this field :%v", err))
+				case i < 0:
+					panic(fmt.Sprintf("value of %v is %v,to be used for size it must be nonnegative", s, i))
+				}
+				suint = uint64(i)
+			}
+			if uint64(itemslen) > suint {
+				itemslen = int(suint)
+			} else if uint64(itemslen) < suint {
+				blanks = suint - uint64(itemslen)
+			}
+		}
+
+		for i := 0; i < itemslen; i++ {
+			item := v.Index(i)
+			size += sizeOf("", item.Type(), item, tag, sizeMap)
+		}
+		//now we make empty items! to fill up to the size
+		for i := uint64(0); i < blanks; i++ {
+			item := reflect.New(t.Elem())
+			size += sizeOf("", t.Elem(), item.Elem(), tag, sizeMap)
+		}
+	case reflect.String:
+		s := v.String()
+		itemslen := len(s)
+		blanks := uint64(0)
+		if s, ok := tag.Lookup("strlen"); ok {
+			suint, err := strconv.ParseUint(s, 10, 64)
+			if err != nil {
+				i, has := sizeMap[s]
+				switch {
+				case !has:
+					panic(fmt.Sprintf("strlen must either be a positive number or a field found prior to this field :%v", err))
+				case i < 0:
+					panic(fmt.Sprintf("value of %v is %v, to be used for strlen it must be nonnegative", s, i))
+				}
+				suint = uint64(i)
+			}
+			if uint64(itemslen) > suint {
+				itemslen = int(suint)
+			} else if uint64(itemslen) < suint {
+				blanks = suint - uint64(itemslen)
+			}
+		}
+		size += 8 * (itemslen + int(blanks))
+	case reflect.Bool:
+		numOfBits, hasBits, err := getBits(tag, map[string]int{}, 8)
+		if err != nil {
+			panic(fmt.Sprintf("%v: %v", fieldName, err))
+		}
+		if hasBits {
+			size += numOfBits
+		} else {
+			size += 8
+		}
+	case reflect.Uint8:
+		sizeMap[fieldName] = int(v.Uint())
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 8)
+		if err != nil {
+			panic(fmt.Sprintf("%v: %v", fieldName, err))
+		}
+
+		if hasBits {
+			size += numOfBits
+		} else {
+			size += 8
+		}
+	case reflect.Uint16:
+		sizeMap[fieldName] = int(v.Uint())
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 16)
+		if err != nil {
+			panic(fmt.Sprintf("%v: %v", fieldName, err))
+		}
+
+		if hasBits {
+			size += numOfBits
+		} else {
+			size += 16
+		}
+	case reflect.Uint32:
+		sizeMap[fieldName] = int(v.Uint())
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 32)
+		if err != nil {
+			panic(fmt.Sprintf("%v: %v", fieldName, err))
+		}
+		if hasBits {
+			size += numOfBits
+		} else {
+			size += 32
+		}
+	case reflect.Uint64:
+		sizeMap[fieldName] = int(v.Uint())
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 64)
+		if err != nil {
+			panic(fmt.Sprintf("%v: %v", fieldName, err))
+		}
+		if hasBits {
+			size += numOfBits
+		} else {
+			size += 64
+		}
+	case reflect.Int8:
+		sizeMap[fieldName] = int(v.Int())
+		_, hasBits, _ := getBits(tag, sizeMap, 8)
+		if hasBits {
+			panic(fmt.Sprintf("bits not supported with int8: %v", fieldName))
+		}
+		size += 8
+	case reflect.Int16:
+		sizeMap[fieldName] = int(v.Int())
+		_, hasBits, _ := getBits(tag, sizeMap, 16)
+		if hasBits {
+			panic(fmt.Sprintf("bits not supported with int16: %v", fieldName))
+		}
+		size += 16
+	case reflect.Int32:
+		sizeMap[fieldName] = int(v.Int())
+		_, hasBits, _ := getBits(tag, sizeMap, 32)
+		if hasBits {
+			panic(fmt.Sprintf("bits not supported with int32: %v", fieldName))
+		}
+		size += 32
+	case reflect.Int64:
+		sizeMap[fieldName] = int(v.Int())
+		_, hasBits, _ := getBits(tag, sizeMap, 64)
+		if hasBits {
+			panic(fmt.Sprintf("bits not supported with int64: %v", fieldName))
+		}
+		size += 64
+	case reflect.Float32:
+		_, hasBits, _ := getBits(tag, sizeMap, 32)
+		if hasBits {
+			panic(fmt.Sprintf("bits not supported with float32: %v", fieldName))
+		}
+		size += 32
+	case reflect.Float64:
+		_, hasBits, _ := getBits(tag, sizeMap, 8)
+		if hasBits {
+			panic(fmt.Sprintf("bits not supported with float64: %v", fieldName))
+		}
+		size += 64
+	default:
+		panic(fmt.Sprintf("%v not supported", t))
+	}
+	return size
 }
