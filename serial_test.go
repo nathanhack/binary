@@ -693,3 +693,45 @@ func TestDecodeExampleIpv4Header(t *testing.T) {
 		t.Fatalf("expected %v but found %v", expected, o2)
 	}
 }
+
+func TestEncodeDecodeOmit(t *testing.T) {
+	type Stuff struct {
+		Index  uint16
+		Less   bool `omit:""`
+		Index2 uint16
+	}
+
+	data := Stuff{
+		Index:  100,
+		Less:   true,
+		Index2: 0xffff,
+	}
+
+	encoded, err := Encode(data)
+	if err != nil {
+		t.Fatalf("expect no error but found: %v", err)
+	}
+
+	expectedSize := 4
+	if len(encoded) != expectedSize {
+		t.Fatalf("expected %v but found %v", expectedSize, len(encoded))
+	}
+
+	var actual Stuff
+
+	err = Decode(encoded, &actual)
+	if err != nil {
+		t.Fatalf("expect no error but found: %v", err)
+	}
+
+	if actual.Index != data.Index {
+		t.Fatalf("expected %v but found %v", actual.Index, data.Index)
+	}
+	if actual.Index2 != data.Index2 {
+		t.Fatalf("expected %v but found %v", actual.Index2, data.Index2)
+	}
+	if actual.Less == data.Less {
+		t.Fatalf("expected %v but found %v", actual.Less, data.Less)
+	}
+
+}

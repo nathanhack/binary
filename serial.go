@@ -32,6 +32,9 @@ loop:
 	sizeMap := map[string]int{}
 	for i := 0; i < t.NumField(); i++ {
 		sf := t.Field(i)
+		if _, has := sf.Tag.Lookup("omit"); has {
+			continue
+		}
 		err := enc(sf.Name, sf.Type, v.Field(i), sf.Tag, buf, sizeMap)
 		if err != nil {
 			return nil, err
@@ -62,6 +65,9 @@ func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTa
 		}
 		for i := 0; i < t.NumField(); i++ {
 			sf := t.Field(i)
+			if _, has := sf.Tag.Lookup("omit"); has {
+				continue
+			}
 			err := enc(sf.Name, sf.Type, v.Field(i), sf.Tag, buf, m)
 			if err != nil {
 				return err
@@ -441,6 +447,9 @@ func Decode(data []byte, v interface{}) error {
 	for i := 0; i < vOf.NumField(); i++ {
 		sf := tOf.Field(i)
 		vf := vOf.Field(i)
+		if _, has := sf.Tag.Lookup("omit"); has {
+			continue
+		}
 		err := decode(sf.Name, sf.Type, vf, sf.Tag, buf, sizeMap)
 		if err != nil {
 			return err
@@ -469,6 +478,9 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 		for i := 0; i < v.NumField(); i++ {
 			sf := t.Field(i)
 			vf := v.Field(i)
+			if _, has := sf.Tag.Lookup("omit"); has {
+				continue
+			}
 			err := decode(sf.Name, sf.Type, vf, sf.Tag, buf, sizeMap)
 			if err != nil {
 				return err
