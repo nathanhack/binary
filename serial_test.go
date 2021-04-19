@@ -1,6 +1,9 @@
 package binary
 
 import (
+	"encoding/binary"
+	"fmt"
+	bits "github.com/nathanhack/bitsetbuffer"
 	"reflect"
 	"strconv"
 	"testing"
@@ -694,10 +697,7 @@ func TestDecodeExampleIpv4Header(t *testing.T) {
 	}
 }
 
-
-
 func TestSizeOf(t *testing.T) {
-
 	type T1 struct {
 		I0  bool
 		I1  int8
@@ -783,5 +783,198 @@ func TestEncodeDecodeOmit(t *testing.T) {
 	if actual.Less == data.Less {
 		t.Fatalf("expected %v but found %v", actual.Less, data.Less)
 	}
+}
 
+type HasInterface struct {
+	Value uint32
+}
+
+func (receiver *HasInterface) GetByte() byte {
+	return byte(0xff & receiver.Value)
+}
+
+func TestSetStructHandlers(t *testing.T) {
+	type Tuff struct {
+		Thing HasInterface
+	}
+	h := HasInterface{
+		Value: 0x11223344,
+	}
+	value := Tuff{
+		Thing: h,
+	}
+
+	//another way to get the struct type
+	//var testt HasInterface
+	// then reflect.TypeOf(testt)
+	option := &StructEncDec{
+		StructType: reflect.TypeOf(HasInterface{}),
+		Encoder: func(fieldName string, v reflect.Value, tag reflect.StructTag, buf bits.BitSetWriter, sizeMap map[string]int, options ...EncDecOption) error {
+			tmp := v.Interface().(HasInterface)
+			n, err := buf.Write([]byte{byte((tmp.Value >> 16) & 0xff)})
+			if err != nil {
+				return err
+			}
+			if n != 1 {
+				return fmt.Errorf("expected 1 byte written found %v", n)
+			}
+			return nil
+		},
+		Decoder: func(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf *bits.BitSetBuffer, sizeMap map[string]int, options ...EncDecOption) error {
+			var b byte
+			err := binary.Read(buf, binary.LittleEndian, &b)
+			if err != nil {
+				return err
+			}
+
+			i := HasInterface{Value: uint32(b) << 16}
+			v.Set(reflect.ValueOf(i))
+			return nil
+		},
+	}
+
+	actual, err := Encode(&value, option)
+	if err != nil {
+		t.Fatalf("expected no error found: %v", err)
+	}
+
+	expected := []byte{0x22}
+	if !reflect.DeepEqual(expected, actual) {
+		t.Fatalf("expected %v but found %v", expected, actual)
+	}
+
+	//now we test the decode side
+	var actualDecoded Tuff
+	err = Decode(actual, &actualDecoded, option)
+	if err != nil {
+		t.Fatalf("expect no error but found: %v", err)
+	}
+
+	expectedDecoded := Tuff{
+		Thing: HasInterface{Value: 0x00220000},
+	}
+	if !reflect.DeepEqual(actualDecoded, expectedDecoded) {
+		t.Fatalf("expected %v but found %v", value, actualDecoded)
+	}
+
+}
+
+func TestSetInterfaceHandlers(t *testing.T) {
+	type Something interface {
+		GetByte() byte
+	}
+
+	type Tuff struct {
+		Thing HasInterface
+		Maybe Something
+	}
+	h := HasInterface{
+		Value: 0x11223344,
+	}
+	value := Tuff{
+		Thing: h,
+		Maybe: &h,
+	}
+
+	//another way to create the reflect.Type of an Interface
+	//var v *Something
+	//tte := reflect.TypeOf(v).Elem()  //.Elem() to get the interface from the pointer
+
+	option := &InterfaceEncDec{
+		InterfaceType: reflect.TypeOf((*Something)(nil)).Elem(),
+		Encoder: func(fieldName string, v reflect.Value, tag reflect.StructTag, buf bits.BitSetWriter, sizeMap map[string]int, options ...EncDecOption) error {
+			tmp := v.Interface().(Something)
+			n, err := buf.Write([]byte{tmp.GetByte()})
+			if err != nil {
+				return err
+			}
+			if n != 1 {
+				return fmt.Errorf("expected 1 byte written found %v", n)
+			}
+			return nil
+		},
+		Decoder: func(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf *bits.BitSetBuffer, sizeMap map[string]int, options ...EncDecOption) error {
+			var b byte
+			err := binary.Read(buf, binary.LittleEndian, &b)
+			if err != nil {
+				return err
+			}
+
+			i := &HasInterface{Value: uint32(b)}
+			v.Set(reflect.ValueOf(i))
+			return nil
+		},
+	}
+
+	actual, err := Encode(&value, option)
+	if err != nil {
+		t.Fatalf("expected no error found: %v", err)
+	}
+
+	expected := []byte{0x44, 0x33, 0x22, 0x11, 0x44}
+	if !reflect.DeepEqual(expected, actual) {
+		t.Fatalf("expected %v but found %v", expected, actual)
+	}
+
+	//now we test the decode side
+	var actualDecoded Tuff
+	err = Decode(actual, &actualDecoded, option)
+	if err != nil {
+		t.Fatalf("expect no error but found: %v", err)
+	}
+
+	expectedDecoded := Tuff{
+		Thing: HasInterface{Value: 0x11223344},
+		Maybe: &HasInterface{Value: uint32(0x44)},
+	}
+	if !reflect.DeepEqual(actualDecoded, expectedDecoded) {
+		t.Fatalf("expected %v but found %v", value, actualDecoded)
+	}
+}
+
+type marshalerTester struct {
+	One int
+}
+
+func (m *marshalerTester) MarshalBits() (data *bits.BitSetBuffer, err error) {
+	buf := &bits.BitSetBuffer{}
+	err = binary.Write(buf, binary.LittleEndian, int64(m.One))
+	if err != nil {
+		return
+	}
+	return buf, nil
+}
+
+func (m *marshalerTester) UnmarshalBits(data *bits.BitSetBuffer) error {
+	var num int64
+	err := binary.Read(data, binary.LittleEndian, &num)
+	if err != nil {
+		return err
+	}
+	m.One = int(num)
+	return nil
+}
+
+func TestBitMarshalerInterface(t *testing.T) {
+	expected := marshalerTester{0x11223344}
+	expectedValue := []byte{0x44, 0x33, 0x22, 0x11, 0, 0, 0, 0}
+
+	actualValue, err := Encode(&expected)
+	if err != nil {
+		t.Fatalf("expected no error but found: %v", err)
+	}
+
+	if !reflect.DeepEqual(expectedValue, actualValue) {
+		t.Fatalf("expected %v but found %v", expectedValue, actualValue)
+	}
+
+	var actual marshalerTester
+	err = Decode(actualValue, &actual)
+	if err != nil {
+		t.Fatalf("expected not error but found: %v", err)
+	}
+
+	if !reflect.DeepEqual(expected, actual) {
+		t.Fatalf("expected %#v but found %#v", expectedValue, actualValue)
+	}
 }

@@ -3,19 +3,93 @@ package binary
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/nathanhack/binary/internal"
-	"math"
+	bits "github.com/nathanhack/bitsetbuffer"
 	"reflect"
 	"strconv"
 	"strings"
 )
 
-func Encode(st interface{}) ([]byte, error) {
+type BitsMarshaler interface {
+	MarshalBits() (data *bits.BitSetBuffer, err error)
+}
+
+type BitsUnmarshaler interface {
+	UnmarshalBits(data *bits.BitSetBuffer) error
+}
+
+type EncDecOption interface {
+	Type() reflect.Type
+	EncoderFunc() func(fieldName string, v reflect.Value, tag reflect.StructTag, buf bits.BitSetWriter, sizeMap map[string]int, options ...EncDecOption) error
+	DecoderFunc() func(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf *bits.BitSetBuffer, sizeMap map[string]int, options ...EncDecOption) error
+}
+
+type StructEncDec struct {
+	StructType reflect.Type
+	Encoder    func(fieldName string, v reflect.Value, tag reflect.StructTag, buf bits.BitSetWriter, sizeMap map[string]int, options ...EncDecOption) error
+	Decoder    func(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf *bits.BitSetBuffer, sizeMap map[string]int, options ...EncDecOption) error
+}
+
+func (s *StructEncDec) Type() reflect.Type {
+	return s.StructType
+}
+
+func (s *StructEncDec) EncoderFunc() func(fieldName string, v reflect.Value, tag reflect.StructTag, buf bits.BitSetWriter, sizeMap map[string]int, options ...EncDecOption) error {
+	return s.Encoder
+}
+
+func (s *StructEncDec) DecoderFunc() func(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf *bits.BitSetBuffer, sizeMap map[string]int, options ...EncDecOption) error {
+	return s.Decoder
+}
+
+type InterfaceEncDec struct {
+	InterfaceType reflect.Type
+	Encoder       func(fieldName string, v reflect.Value, tag reflect.StructTag, buf bits.BitSetWriter, sizeMap map[string]int, options ...EncDecOption) error
+	Decoder       func(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf *bits.BitSetBuffer, sizeMap map[string]int, options ...EncDecOption) error
+}
+
+func (i *InterfaceEncDec) Type() reflect.Type {
+	return i.InterfaceType
+}
+
+func (i *InterfaceEncDec) EncoderFunc() func(fieldName string, v reflect.Value, tag reflect.StructTag, buf bits.BitSetWriter, sizeMap map[string]int, options ...EncDecOption) error {
+	return i.Encoder
+}
+
+func (i *InterfaceEncDec) DecoderFunc() func(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf *bits.BitSetBuffer, sizeMap map[string]int, options ...EncDecOption) error {
+	return i.Decoder
+}
+
+func validateOptions(options ...EncDecOption) error {
+	for _, item := range options {
+		if item.Type() == nil || (item.Type().Kind() != reflect.Struct && item.Type().Kind() != reflect.Interface) {
+			return fmt.Errorf("Type() must not be nil and be either a struct or interface")
+		}
+		if item.EncoderFunc() == nil {
+			return fmt.Errorf("EncoderFunc() must not be nil")
+		}
+		if item.DecoderFunc() == nil {
+			return fmt.Errorf("DecoderFunc() must not be nil")
+		}
+	}
+	return nil
+}
+
+//Encode is the main function to call to encode structs. To add special encoding use BitsMarshaler.
+//  InterfaceEncDec options are available to be passed in to support Interfaces types.
+//  StructEncDec options are also a way to change the behaviour of struct encoding for structs that do/can not implement
+//  BitsMarshaler.
+func Encode(st interface{}, options ...EncDecOption) ([]byte, error) {
 	if st == nil {
 		return nil, fmt.Errorf("nil pointer not alowed")
 	}
+
+	if err := validateOptions(options...); err != nil {
+		return nil, err
+	}
+
 	t := reflect.TypeOf(st)
 	v := reflect.ValueOf(st)
+
 loop:
 	for {
 		switch t.Kind() {
@@ -29,14 +103,36 @@ loop:
 		}
 	}
 
-	buf := &internal.BitSetBuffer{}
+	//check it we have a BitMarshaler
+	buf := &bits.BitSetBuffer{}
+	processed, err := encMarshaler(v, buf)
+	if err != nil {
+		return nil, err
+	}
+
+	if processed {
+		return buf.Bytes(), nil
+	}
+
+	//so we didn't have a BitMarshaler so we'll
+	// work on the Struct Options
 	sizeMap := map[string]int{}
+	processed, err = encStructSpecial("", v, "", buf, sizeMap, options...)
+	if err != nil {
+		return nil, err
+	}
+
+	if processed {
+		return buf.Bytes(), nil
+	}
+
+	//lastly it's just a plain struct so we get to work on the fields
 	for i := 0; i < t.NumField(); i++ {
 		sf := t.Field(i)
 		if _, has := sf.Tag.Lookup("omit"); has {
 			continue
 		}
-		err := enc(sf.Name, sf.Type, v.Field(i), sf.Tag, buf, sizeMap)
+		err = EncodeField(sf.Name, sf.Type, v.Field(i), sf.Tag, buf, sizeMap, options...)
 		if err != nil {
 			return nil, err
 		}
@@ -45,7 +141,60 @@ loop:
 	return buf.Bytes(), nil
 }
 
-func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf internal.BitSetWriter, sizeMap map[string]int) error {
+func encMarshaler(v reflect.Value, buf bits.BitSetWriter) (bool, error) {
+	modelType := reflect.TypeOf((*BitsMarshaler)(nil)).Elem()
+	t := v.Type()
+	var marshaler BitsMarshaler
+	if t.Implements(modelType) {
+		marshaler = v.Interface().(BitsMarshaler)
+	} else if reflect.PtrTo(t).Implements(modelType) && v.CanAddr() {
+		marshaler = v.Addr().Interface().(BitsMarshaler)
+	} else {
+		return false, nil
+	}
+
+	b, err := marshaler.MarshalBits()
+	if err != nil {
+		return false, err
+	}
+
+	n, err := buf.WriteBits(b.Set)
+	if err != nil {
+		return false, err
+	}
+
+	if n != len(b.Set) {
+		return false, fmt.Errorf("wrote %v expected %v", n, len(b.Set))
+	}
+	return true, nil
+}
+
+func encStructSpecial(fieldName string, v reflect.Value, tag reflect.StructTag, buf bits.BitSetWriter, sizeMap map[string]int, options ...EncDecOption) (bool, error) {
+	for _, enc := range options {
+		if enc.Type() == v.Type() {
+			err := enc.EncoderFunc()(fieldName, v, tag, buf, sizeMap, options...)
+			if err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+//EncodeField should be only if it's part of one of the encode function in one of the options (StructEncDec or InterfaceEncDec).  When
+// called on a field it will do correct encoding. Be careful when calling this function in the options as to avoid recursive explosion.
+func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf bits.BitSetWriter, sizeMap map[string]int, options ...EncDecOption) error {
+	//we check for the BitsMarshaler
+	processed, err := encMarshaler(v, buf)
+	if err != nil {
+		return err
+	}
+
+	if processed {
+		return nil
+	}
+
 	endianness, err := getEndianness(tag)
 	if err != nil {
 		return fmt.Errorf("%v: %v", fieldName, err)
@@ -55,21 +204,42 @@ func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTa
 	case reflect.Ptr:
 		if v.IsNil() {
 			val := reflect.New(t.Elem())
-			return enc(fieldName, t.Elem(), val.Elem(), tag, buf, sizeMap)
+			return EncodeField(fieldName, t.Elem(), val.Elem(), tag, buf, sizeMap, options...)
 		} else {
-			return enc(fieldName, t.Elem(), v.Elem(), tag, buf, sizeMap)
+			return EncodeField(fieldName, t.Elem(), v.Elem(), tag, buf, sizeMap, options...)
 		}
+	case reflect.Interface:
+		for _, enc := range options {
+			if enc.Type() == v.Type() {
+				err := enc.EncoderFunc()(fieldName, v, tag, buf, sizeMap, options...)
+				if err != nil {
+					return err
+				}
+				return nil
+			}
+		}
+		return fmt.Errorf("interface:%v was not found: interface not supported", t.Name())
 	case reflect.Struct:
+		processed, err := encStructSpecial(fieldName, v, tag, buf, sizeMap, options...)
+		if err != nil {
+			return err
+		}
+
+		if processed {
+			return nil
+		}
+
 		m := map[string]int{}
 		for k, v := range sizeMap {
 			m[k] = v
 		}
+
 		for i := 0; i < t.NumField(); i++ {
 			sf := t.Field(i)
 			if _, has := sf.Tag.Lookup("omit"); has {
 				continue
 			}
-			err := enc(sf.Name, sf.Type, v.Field(i), sf.Tag, buf, m)
+			err = EncodeField(sf.Name, sf.Type, v.Field(i), sf.Tag, buf, m, options...)
 			if err != nil {
 				return err
 			}
@@ -77,7 +247,7 @@ func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTa
 	case reflect.Array:
 		for i := 0; i < v.Len(); i++ {
 			item := v.Index(i)
-			if err := enc("", item.Type(), item, tag, buf, sizeMap); err != nil {
+			if err := EncodeField("", item.Type(), item, tag, buf, sizeMap, options...); err != nil {
 				return err
 			}
 		}
@@ -106,14 +276,14 @@ func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTa
 
 		for i := 0; i < itemslen; i++ {
 			item := v.Index(i)
-			if err := enc("", item.Type(), item, tag, buf, sizeMap); err != nil {
+			if err := EncodeField("", item.Type(), item, tag, buf, sizeMap, options...); err != nil {
 				return err
 			}
 		}
 		//now we make empty items! to fill up to the size
 		for i := uint64(0); i < blanks; i++ {
 			item := reflect.New(t.Elem())
-			if err := enc("", t.Elem(), item.Elem(), tag, buf, sizeMap); err != nil {
+			if err := EncodeField("", t.Elem(), item.Elem(), tag, buf, sizeMap, options...); err != nil {
 				return err
 			}
 		}
@@ -301,7 +471,7 @@ func enc(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTa
 	return nil
 }
 
-func writeBits(buf internal.BitSetWriter, numOfBits int, endianness binary.ByteOrder, value uint64) error {
+func writeBits(buf bits.BitSetWriter, numOfBits int, endianness binary.ByteOrder, value uint64) error {
 	bits := make([]bool, numOfBits)
 	for i := 0; i < numOfBits; i++ {
 		bits[i] = value&(1<<i) > 0
@@ -345,7 +515,7 @@ func writeBits(buf internal.BitSetWriter, numOfBits int, endianness binary.ByteO
 	return nil
 }
 
-func readBits(buf internal.BitSetReader, numOfBits int, endianness binary.ByteOrder) (uint64, error) {
+func readBits(buf bits.BitSetReader, numOfBits int, endianness binary.ByteOrder) (uint64, error) {
 	bits := make([]bool, numOfBits)
 	n, err := buf.ReadBits(bits)
 	if err != nil {
@@ -425,33 +595,72 @@ func getBits(tag reflect.StructTag, sizeMap map[string]int, limit uint64) (int, 
 	return int(value), true, nil
 }
 
-func Decode(data []byte, v interface{}) error {
-	if data == nil || v == nil {
-		return fmt.Errorf("nil parameters")
+//Decode is the main function to call to decode struct. To add special decoding use BitsUnmarshaler.
+//  InterfaceEncDec options are available to be passed in to support Interfaces types.
+//  StructEncDec options are also a way to change the behaviour of struct decoding for structs that do/can not implement
+//  BitsUnmarshaler.
+func Decode(data []byte, value interface{}, options ...EncDecOption) error {
+	if data == nil || value == nil {
+		return fmt.Errorf("nil parameters not allowed")
 	}
 
-	buf, err := internal.NewFromBytes(data)
+	buf, err := bits.NewFromBytes(data)
 	if err != nil {
 		return err
 	}
-	tOf := reflect.TypeOf(v)
-	vOf := reflect.ValueOf(v)
-	if vOf.Kind() != reflect.Ptr {
-		return fmt.Errorf("expected v to be a pointer to a struct")
+
+	t := reflect.TypeOf(value)
+	v := reflect.ValueOf(value)
+
+	//we require the struct coming in to be at least pointer to a struct
+	// so we can populate it
+	if t.Kind() != reflect.Ptr {
+		panic("value expected to be a pointer to a structure")
 	}
-	tOf = tOf.Elem()
-	vOf = vOf.Elem()
-	if vOf.Kind() != reflect.Struct {
-		return fmt.Errorf("expected v to be a pointer to a struct")
+
+	//we unwrap until we get to the struct
+loop:
+	for {
+		switch t.Kind() {
+		case reflect.Ptr:
+			t = t.Elem()
+			v = v.Elem()
+		case reflect.Struct:
+			break loop
+		default:
+			return fmt.Errorf("invalid value")
+		}
 	}
+
+	//first we check if it's a BitsUnmarshaler
+	processed, err := decUnmarshaler(v, buf)
+	if err != nil {
+		return err
+	}
+
+	if processed {
+		return nil
+	}
+
+	//next we check the options
 	sizeMap := map[string]int{}
-	for i := 0; i < vOf.NumField(); i++ {
-		sf := tOf.Field(i)
-		vf := vOf.Field(i)
+	processed, err = decStructSpecial("", t, v, "", buf, sizeMap, options...)
+	if err != nil {
+		return err
+	}
+
+	if processed {
+		return nil
+	}
+
+	//for the last case we take the struct and unmarshal all the fields
+	for i := 0; i < v.NumField(); i++ {
+		sf := t.Field(i)
+		vf := v.Field(i)
 		if _, has := sf.Tag.Lookup("omit"); has {
 			continue
 		}
-		err := decode(sf.Name, sf.Type, vf, sf.Tag, buf, sizeMap)
+		err := DecodeField(sf.Name, sf.Type, vf, sf.Tag, buf, sizeMap, options...)
 		if err != nil {
 			return err
 		}
@@ -460,7 +669,50 @@ func Decode(data []byte, v interface{}) error {
 	return nil
 }
 
-func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf *internal.BitSetBuffer, sizeMap map[string]int) error {
+func decUnmarshaler(v reflect.Value, buf *bits.BitSetBuffer) (bool, error) {
+	modelType := reflect.TypeOf((*BitsUnmarshaler)(nil)).Elem()
+	t := v.Type()
+	var unmarshaler BitsUnmarshaler
+	if t.Implements(modelType) {
+		unmarshaler = v.Interface().(BitsUnmarshaler)
+	} else if reflect.PtrTo(t).Implements(modelType) {
+		unmarshaler = v.Addr().Interface().(BitsUnmarshaler)
+	} else {
+		return false, nil
+	}
+
+	err := unmarshaler.UnmarshalBits(buf)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func decStructSpecial(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf *bits.BitSetBuffer, sizeMap map[string]int, options ...EncDecOption) (bool, error) {
+	for _, dec := range options {
+		if dec.Type() == v.Type() {
+			err := dec.DecoderFunc()(fieldName, t, v, tag, buf, sizeMap, options...)
+			if err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+//DecodeField should be only if it's part of one of the decode function in one of the options (StructEncDec or InterfaceEncDec).  When
+// called on a field it will do correct decoding. Be careful when calling this function in the options as to avoid recursive explosion.
+func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, buf *bits.BitSetBuffer, sizeMap map[string]int, options ...EncDecOption) error {
+	processed, err := decUnmarshaler(v, buf)
+	if err != nil {
+		return err
+	}
+
+	if processed {
+		return nil
+	}
+
 	endianness, err := getEndianness(tag)
 	if err != nil {
 		return fmt.Errorf("%v: %v", fieldName, err)
@@ -469,20 +721,43 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 	switch t.Kind() {
 	case reflect.Ptr:
 		val := reflect.New(t.Elem())
-		err := decode(fieldName, t.Elem(), val.Elem(), tag, buf, sizeMap)
+		err := DecodeField(fieldName, t.Elem(), val.Elem(), tag, buf, sizeMap, options...)
 		if err != nil {
 			return err
 		}
 		v.Set(val)
+	case reflect.Interface:
+		for _, enc := range options {
+			if enc.Type() == v.Type() {
+				err := enc.DecoderFunc()(fieldName, t, v, tag, buf, sizeMap, options...)
+				if err != nil {
+					return err
+				}
+				return nil
+			}
+		}
+		return fmt.Errorf("interface:%v was not found: interface not supported", t.Name())
 	case reflect.Struct:
-		sizeMap := map[string]int{}
+		m := make(map[string]int)
+		for k, v := range sizeMap {
+			m[k] = v
+		}
+		processed, err := decStructSpecial(fieldName, t, v, tag, buf, m, options...)
+		if err != nil {
+			return err
+		}
+
+		if processed {
+			return nil
+		}
+
 		for i := 0; i < v.NumField(); i++ {
 			sf := t.Field(i)
 			vf := v.Field(i)
 			if _, has := sf.Tag.Lookup("omit"); has {
 				continue
 			}
-			err := decode(sf.Name, sf.Type, vf, sf.Tag, buf, sizeMap)
+			err := DecodeField(sf.Name, sf.Type, vf, sf.Tag, buf, m, options...)
 			if err != nil {
 				return err
 			}
@@ -490,7 +765,7 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 	case reflect.Array:
 		for i := 0; i < v.Len(); i++ {
 			item := v.Index(i)
-			if err := decode("", item.Type(), item, tag, buf, sizeMap); err != nil {
+			if err := DecodeField("", item.Type(), item, tag, buf, sizeMap, options...); err != nil {
 				return err
 			}
 		}
@@ -519,7 +794,7 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 		sliceValuePtr := reflect.ValueOf(reflectionValue.Interface()).Elem()
 		for i := 0; i < suint || (all && !buf.PosAtEnd()); i++ {
 			item := reflect.New(t.Elem())
-			if err := decode("", item.Elem().Type(), item.Elem(), tag, buf, sizeMap); err != nil {
+			if err := DecodeField("", item.Elem().Type(), item.Elem(), tag, buf, sizeMap, options...); err != nil {
 				return err
 			}
 
@@ -759,210 +1034,11 @@ func decode(fieldName string, t reflect.Type, v reflect.Value, tag reflect.Struc
 }
 
 //SizeOf returns the minimum number of bytes needed to serialize the structure
-func SizeOf(v interface{}) int {
-	if v == nil {
-		return 0
-	}
-
-	tOf := reflect.TypeOf(v)
-	vOf := reflect.ValueOf(v)
-
-	if vOf.Kind() != reflect.Ptr && vOf.Kind() != reflect.Struct {
-		panic("expected value to be a struct or a pointer to a struct")
-	}
-
-	if vOf.Kind() == reflect.Ptr {
-		tOf = tOf.Elem()
-		vOf = vOf.Elem()
-	}
-
-	size := 0
-	sizeMap := map[string]int{}
-	for i := 0; i < vOf.NumField(); i++ {
-		sf := tOf.Field(i)
-		vf := vOf.Field(i)
-		size += sizeOf(sf.Name, sf.Type, vf, sf.Tag, sizeMap)
-	}
-
-	return int(math.Ceil(float64(size) / 8))
-}
-
-func sizeOf(fieldName string, t reflect.Type, v reflect.Value, tag reflect.StructTag, sizeMap map[string]int) int {
-	_, err := getEndianness(tag)
+func SizeOf(v interface{}, options ...EncDecOption) int {
+	bs, err := Encode(v, options...)
 	if err != nil {
-		panic(fmt.Sprintf("%v: %v", fieldName, err))
+		panic(err)
 	}
-	size := 0
-	switch t.Kind() {
-	case reflect.Ptr:
-		val := reflect.New(t.Elem())
-		return sizeOf(fieldName, t.Elem(), val.Elem(), tag, sizeMap)
-	case reflect.Struct:
-		m := map[string]int{}
-		for k, v := range sizeMap {
-			m[k] = v
-		}
-		for i := 0; i < t.NumField(); i++ {
-			sf := t.Field(i)
-			size += sizeOf(sf.Name, sf.Type, v.Field(i), sf.Tag, m)
-		}
-	case reflect.Array:
-		for i := 0; i < v.Len(); i++ {
-			item := v.Index(i)
-			size += sizeOf("", item.Type(), item, tag, sizeMap)
-		}
-	case reflect.Slice:
-		itemslen := v.Len()
-		blanks := uint64(0)
-		if s, ok := tag.Lookup("size"); ok {
-			suint, err := strconv.ParseUint(s, 10, 64)
-			if err != nil {
-				i, has := sizeMap[s]
-				switch {
-				case !has:
-					panic(fmt.Sprintf("size must either be a positive number or a field found prior to this field :%v", err))
-				case i < 0:
-					panic(fmt.Sprintf("value of %v is %v,to be used for size it must be nonnegative", s, i))
-				}
-				suint = uint64(i)
-			}
-			if uint64(itemslen) > suint {
-				itemslen = int(suint)
-			} else if uint64(itemslen) < suint {
-				blanks = suint - uint64(itemslen)
-			}
-		}
 
-		for i := 0; i < itemslen; i++ {
-			item := v.Index(i)
-			size += sizeOf("", item.Type(), item, tag, sizeMap)
-		}
-		//now we make empty items! to fill up to the size
-		for i := uint64(0); i < blanks; i++ {
-			item := reflect.New(t.Elem())
-			size += sizeOf("", t.Elem(), item.Elem(), tag, sizeMap)
-		}
-	case reflect.String:
-		s := v.String()
-		itemslen := len(s)
-		blanks := uint64(0)
-		if s, ok := tag.Lookup("strlen"); ok {
-			suint, err := strconv.ParseUint(s, 10, 64)
-			if err != nil {
-				i, has := sizeMap[s]
-				switch {
-				case !has:
-					panic(fmt.Sprintf("strlen must either be a positive number or a field found prior to this field :%v", err))
-				case i < 0:
-					panic(fmt.Sprintf("value of %v is %v, to be used for strlen it must be nonnegative", s, i))
-				}
-				suint = uint64(i)
-			}
-			if uint64(itemslen) > suint {
-				itemslen = int(suint)
-			} else if uint64(itemslen) < suint {
-				blanks = suint - uint64(itemslen)
-			}
-		}
-		size += 8 * (itemslen + int(blanks))
-	case reflect.Bool:
-		numOfBits, hasBits, err := getBits(tag, map[string]int{}, 8)
-		if err != nil {
-			panic(fmt.Sprintf("%v: %v", fieldName, err))
-		}
-		if hasBits {
-			size += numOfBits
-		} else {
-			size += 8
-		}
-	case reflect.Uint8:
-		sizeMap[fieldName] = int(v.Uint())
-		numOfBits, hasBits, err := getBits(tag, sizeMap, 8)
-		if err != nil {
-			panic(fmt.Sprintf("%v: %v", fieldName, err))
-		}
-
-		if hasBits {
-			size += numOfBits
-		} else {
-			size += 8
-		}
-	case reflect.Uint16:
-		sizeMap[fieldName] = int(v.Uint())
-		numOfBits, hasBits, err := getBits(tag, sizeMap, 16)
-		if err != nil {
-			panic(fmt.Sprintf("%v: %v", fieldName, err))
-		}
-
-		if hasBits {
-			size += numOfBits
-		} else {
-			size += 16
-		}
-	case reflect.Uint32:
-		sizeMap[fieldName] = int(v.Uint())
-		numOfBits, hasBits, err := getBits(tag, sizeMap, 32)
-		if err != nil {
-			panic(fmt.Sprintf("%v: %v", fieldName, err))
-		}
-		if hasBits {
-			size += numOfBits
-		} else {
-			size += 32
-		}
-	case reflect.Uint64:
-		sizeMap[fieldName] = int(v.Uint())
-		numOfBits, hasBits, err := getBits(tag, sizeMap, 64)
-		if err != nil {
-			panic(fmt.Sprintf("%v: %v", fieldName, err))
-		}
-		if hasBits {
-			size += numOfBits
-		} else {
-			size += 64
-		}
-	case reflect.Int8:
-		sizeMap[fieldName] = int(v.Int())
-		_, hasBits, _ := getBits(tag, sizeMap, 8)
-		if hasBits {
-			panic(fmt.Sprintf("bits not supported with int8: %v", fieldName))
-		}
-		size += 8
-	case reflect.Int16:
-		sizeMap[fieldName] = int(v.Int())
-		_, hasBits, _ := getBits(tag, sizeMap, 16)
-		if hasBits {
-			panic(fmt.Sprintf("bits not supported with int16: %v", fieldName))
-		}
-		size += 16
-	case reflect.Int32:
-		sizeMap[fieldName] = int(v.Int())
-		_, hasBits, _ := getBits(tag, sizeMap, 32)
-		if hasBits {
-			panic(fmt.Sprintf("bits not supported with int32: %v", fieldName))
-		}
-		size += 32
-	case reflect.Int64:
-		sizeMap[fieldName] = int(v.Int())
-		_, hasBits, _ := getBits(tag, sizeMap, 64)
-		if hasBits {
-			panic(fmt.Sprintf("bits not supported with int64: %v", fieldName))
-		}
-		size += 64
-	case reflect.Float32:
-		_, hasBits, _ := getBits(tag, sizeMap, 32)
-		if hasBits {
-			panic(fmt.Sprintf("bits not supported with float32: %v", fieldName))
-		}
-		size += 32
-	case reflect.Float64:
-		_, hasBits, _ := getBits(tag, sizeMap, 8)
-		if hasBits {
-			panic(fmt.Sprintf("bits not supported with float64: %v", fieldName))
-		}
-		size += 64
-	default:
-		panic(fmt.Sprintf("%v not supported", t))
-	}
-	return size
+	return len(bs)
 }
