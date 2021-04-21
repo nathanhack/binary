@@ -640,7 +640,7 @@ func TestDecodeExampleIpv4Header(t *testing.T) {
 		Destination    uint32 `endian:"big"`
 	}
 
-	o1 := IpHeader{
+	expected := IpHeader{
 		Version:        4,
 		IHL:            5,
 		DSCP:           0,
@@ -657,7 +657,7 @@ func TestDecodeExampleIpv4Header(t *testing.T) {
 		Source:         0x0a010101, //10.1.1.1
 		Destination:    0x0a010101, //10.1.1.1
 	}
-	bs, err := Encode(o1)
+	bs, err := Encode(expected)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -674,26 +674,8 @@ func TestDecodeExampleIpv4Header(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expected := IpHeader{
-		Version:        4,
-		IHL:            5,
-		DSCP:           0,
-		ECN:            0,
-		Length:         24,
-		Identification: 242,
-		Reserved:       false,
-		DontFrag:       false,
-		MoreFrag:       false,
-		FragOffset:     3,
-		TTL:            64,
-		Protocol:       17,
-		Checksum:       0xcf54,
-		Source:         0x0a010101,
-		Destination:    0x0a010101,
-	}
-
 	if !reflect.DeepEqual(expected, o2) {
-		t.Fatalf("expected %v but found %v", expected, o2)
+		t.Fatalf("expected \n%#v\n but found \n%#v\n", expected, o2)
 	}
 }
 
@@ -977,4 +959,182 @@ func TestBitMarshalerInterface(t *testing.T) {
 	if !reflect.DeepEqual(expected, actual) {
 		t.Fatalf("expected %#v but found %#v", expectedValue, actualValue)
 	}
+}
+
+func TestSignedBits(t *testing.T) {
+	type structure struct {
+		V0 int8  `bits:"2"`
+		V1 int16 `bits:"2"`
+		V3 int32 `bits:"2"`
+		V4 int64 `bits:"2"`
+		V5 int8  `bits:"2"`
+		V6 int16 `bits:"2"`
+		V7 int32 `bits:"2"`
+		V8 int64 `bits:"2"`
+
+		V9  int8  `bits:"4"`
+		V10 int16 `bits:"4"`
+		V11 int32 `bits:"4"`
+		V12 int64 `bits:"4"`
+		V13 int8  `bits:"4"`
+		V14 int16 `bits:"4"`
+		V15 int32 `bits:"4"`
+		V16 int64 `bits:"4"`
+	}
+
+	expected := structure{
+		V0:  1,
+		V1:  1,
+		V3:  1,
+		V4:  1,
+		V5:  -1,
+		V6:  -1,
+		V7:  -1,
+		V8:  -1,
+		V9:  7,
+		V10: 7,
+		V11: 7,
+		V12: 7,
+		V13: -7,
+		V14: -7,
+		V15: -7,
+		V16: -7,
+	}
+
+	expectedBytes := []byte{0x55, 0xff, 0x77, 0x77, 0x99, 0x99}
+
+	actualBytes, err := Encode(expected)
+	if err != nil {
+		t.Fatalf("expected no encoding error found: %v", err)
+	}
+
+	if !reflect.DeepEqual(actualBytes, expectedBytes) {
+		t.Fatalf("expected \n%v\n but found \n%v\n", expectedBytes, actualBytes)
+	}
+
+	var actual structure
+	err = Decode(actualBytes, &actual)
+	if err != nil {
+		t.Fatalf("expected no decoding error found: %v", err)
+	}
+
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("expected \n%#v\n but found \n%#v\n", expected, actual)
+	}
+}
+
+func TestSignedBits2(t *testing.T) {
+	type structure struct {
+		V0 int8
+		V1 int16
+		V3 int32
+		V4 int64
+		V5 int8  `bits:"8"`
+		V6 int16 `bits:"8"`
+		V7 int32 `bits:"8"`
+		V8 int64 `bits:"8"`
+
+		V9  int8  `endian:"big"`
+		V10 int16 `endian:"big"`
+		V11 int32 `endian:"big"`
+		V12 int64 `endian:"big"`
+		V13 int8  `bits:"8" endian:"big"`
+		V14 int16 `bits:"8" endian:"big"`
+		V15 int32 `bits:"8" endian:"big"`
+		V16 int64 `bits:"8" endian:"big"`
+	}
+
+	expected := structure{
+		V0:  -127,
+		V1:  -127,
+		V3:  -127,
+		V4:  -127,
+		V5:  -127,
+		V6:  -127,
+		V7:  -127,
+		V8:  -127,
+		V9:  -127,
+		V10: -127,
+		V11: -127,
+		V12: -127,
+		V13: -127,
+		V14: -127,
+		V15: -127,
+		V16: -127,
+	}
+
+	expectedBytes := []byte{0x81, 0x81, 0xff, 0x81, 0xff, 0xff, 0xff, 0x81, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x81, 0x81, 0x81, 0x81,
+		0x81, 0xff, 0x81, 0xff, 0xff, 0xff, 0x81, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x81, 0x81, 0x81, 0x81, 0x81}
+
+	actualBytes, err := Encode(expected)
+	if err != nil {
+		t.Fatalf("expected no encoding error found: %v", err)
+	}
+
+	if !reflect.DeepEqual(actualBytes, expectedBytes) {
+		t.Fatalf("expected \n%v\n but found \n%v\n", expectedBytes, actualBytes)
+	}
+
+	var actual structure
+	err = Decode(actualBytes, &actual)
+	if err != nil {
+		t.Fatalf("expected no decoding error found: %v", err)
+	}
+
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("expected \n%#v\n but found \n%#v\n", expected, actual)
+	}
+}
+
+func TestByteSwapBits(t *testing.T) {
+	tests := []struct {
+		expected    []bool
+		expectedBig []bool
+	}{
+		{
+			[]bool{
+				true, true, false, false, true, false, true, true,
+				false, false, true,
+			},
+			[]bool{
+				false, false, true,
+				true, true, false, false, true, false, true, true,
+			},
+		},
+
+		{
+			[]bool{
+				true, true, false, false, true, false, true, true,
+				false, false, true, true, true, false, false, false,
+			},
+			[]bool{
+				false, false, true, true, true, false, false, false,
+				true, true, false, false, true, false, true, true,
+			},
+		},
+	}
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			actualBig := byteSwapBitsToBig(test.expected)
+			if !reflect.DeepEqual(test.expectedBig, actualBig) {
+				t.Fatalf("expected \n%v\n but found \n%v\n", test.expectedBig, actualBig)
+			}
+
+			actual := byteSwapBitsFromBig(actualBig)
+
+			if !reflect.DeepEqual(test.expected, actual) {
+				t.Fatalf("expected \n%v\n but found \n%v\n", test.expected, actual)
+			}
+		})
+	}
+}
+
+func TestDDD(t *testing.T) {
+	type Thing struct {
+		V1 uint16 `bits:"9" endian:"big"`
+	}
+
+	bytes, _ := Encode(&Thing{0x155}) // 0x155 = 0b10101010 1
+
+	fmt.Printf("%x\n", bytes)
 }

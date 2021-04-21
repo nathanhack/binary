@@ -137,7 +137,6 @@ loop:
 			return nil, err
 		}
 	}
-
 	return buf.Bytes(), nil
 }
 
@@ -319,7 +318,7 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 			return fmt.Errorf("writing string value `%v` failed", str)
 		}
 	case reflect.Bool:
-		bitSize, hasBits, err := getBits(tag, sizeMap, 8)
+		bitSize, hasBits, err := getBits(tag, sizeMap, 8, 0)
 		if err != nil {
 			return err
 		}
@@ -328,121 +327,136 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 			if v.Bool() {
 				tmp = 1
 			}
-			err := writeBits(buf, bitSize, endianness, tmp)
-			if err != nil {
-				return fmt.Errorf("%v : %v", fieldName, err)
-			}
+			err = writeUintsBits(buf, bitSize, endianness, tmp)
 		} else {
-			err := binary.Write(buf, endianness, v.Bool())
-			if err != nil {
-				return fmt.Errorf("%v : %v", fieldName, err)
-			}
+			err = binary.Write(buf, endianness, v.Bool())
+		}
+		if err != nil {
+			return fmt.Errorf("%v : %v", fieldName, err)
 		}
 	case reflect.Uint8:
 		sizeMap[fieldName] = int(v.Uint())
-		bitSize, hasBits, err := getBits(tag, sizeMap, 8)
+
+		bitSize, hasBits, err := getBits(tag, sizeMap, 8, 0)
 		if err != nil {
 			return err
 		}
 		if hasBits {
-			err := writeBits(buf, bitSize, endianness, v.Uint())
-			if err != nil {
-				return fmt.Errorf("%v : %v", fieldName, err)
-			}
+			err = writeUintsBits(buf, bitSize, endianness, v.Uint())
 		} else {
-			err := binary.Write(buf, endianness, uint8(v.Uint()))
-			if err != nil {
-				return fmt.Errorf("%v : %v", fieldName, err)
-			}
+			err = binary.Write(buf, endianness, uint8(v.Uint()))
+		}
+		if err != nil {
+			return fmt.Errorf("%v : %v", fieldName, err)
 		}
 	case reflect.Uint16:
 		sizeMap[fieldName] = int(v.Uint())
-		bitSize, hasBits, err := getBits(tag, sizeMap, 16)
+
+		bitSize, hasBits, err := getBits(tag, sizeMap, 16, 0)
 		if err != nil {
 			return err
 		}
 		if hasBits {
-			err := writeBits(buf, bitSize, endianness, v.Uint())
-			if err != nil {
-				return fmt.Errorf("%v : %v", fieldName, err)
-			}
+			err = writeUintsBits(buf, bitSize, endianness, v.Uint())
 		} else {
-			err := binary.Write(buf, endianness, uint16(v.Uint()))
-			if err != nil {
-				return fmt.Errorf("%v : %v", fieldName, err)
-			}
+			err = binary.Write(buf, endianness, uint16(v.Uint()))
+		}
+		if err != nil {
+			return fmt.Errorf("%v : %v", fieldName, err)
 		}
 	case reflect.Uint32:
 		sizeMap[fieldName] = int(v.Uint())
-		bitSize, hasBits, err := getBits(tag, sizeMap, 32)
+
+		bitSize, hasBits, err := getBits(tag, sizeMap, 32, 0)
 		if err != nil {
 			return err
 		}
 		if hasBits {
-			err := writeBits(buf, bitSize, endianness, v.Uint())
-			if err != nil {
-				return fmt.Errorf("%v : %v", fieldName, err)
-			}
+			err = writeUintsBits(buf, bitSize, endianness, v.Uint())
 		} else {
-			err := binary.Write(buf, endianness, uint32(v.Uint()))
-			if err != nil {
-				return fmt.Errorf("%v : %v", fieldName, err)
-			}
+			err = binary.Write(buf, endianness, uint32(v.Uint()))
+		}
+		if err != nil {
+			return fmt.Errorf("%v : %v", fieldName, err)
 		}
 	case reflect.Uint64:
 		sizeMap[fieldName] = int(v.Uint())
-		bitSize, hasBits, err := getBits(tag, sizeMap, 64)
+
+		bitSize, hasBits, err := getBits(tag, sizeMap, 64, 0)
 		if err != nil {
 			return err
 		}
 		if hasBits {
-			err := writeBits(buf, bitSize, endianness, v.Uint())
-			if err != nil {
-				return fmt.Errorf("%v : %v", fieldName, err)
-			}
+			err = writeUintsBits(buf, bitSize, endianness, v.Uint())
+
 		} else {
-			err := binary.Write(buf, endianness, v.Uint())
-			if err != nil {
-				return fmt.Errorf("%v : %v", fieldName, err)
-			}
+			err = binary.Write(buf, endianness, v.Uint())
+		}
+
+		if err != nil {
+			return fmt.Errorf("%v : %v", fieldName, err)
 		}
 	case reflect.Int8:
-		_, has := tag.Lookup("bits")
-		if has {
-			return fmt.Errorf("bits not supported on int16")
-		}
 		sizeMap[fieldName] = int(v.Int())
-		err := binary.Write(buf, endianness, int8(v.Int()))
+
+		bitSize, hasBits, err := getBits(tag, sizeMap, 8, 2)
+		if err != nil {
+			return err
+		}
+		if hasBits {
+			err = writeIntsBits(buf, bitSize, endianness, v.Int())
+		} else {
+			err = binary.Write(buf, endianness, int8(v.Int()))
+		}
+
 		if err != nil {
 			return fmt.Errorf("%v : %v", fieldName, err)
 		}
 	case reflect.Int16:
-		_, has := tag.Lookup("bits")
-		if has {
-			return fmt.Errorf("bits not supported on int16")
-		}
 		sizeMap[fieldName] = int(v.Int())
-		err := binary.Write(buf, endianness, int16(v.Int()))
+
+		bitSize, hasBits, err := getBits(tag, sizeMap, 16, 2)
+		if err != nil {
+			return err
+		}
+		if hasBits {
+			err = writeIntsBits(buf, bitSize, endianness, v.Int())
+		} else {
+			err = binary.Write(buf, endianness, int16(v.Int()))
+		}
+
 		if err != nil {
 			return fmt.Errorf("%v : %v", fieldName, err)
 		}
 	case reflect.Int32:
-		_, has := tag.Lookup("bits")
-		if has {
-			return fmt.Errorf("bits not supported on int32")
-		}
 		sizeMap[fieldName] = int(v.Int())
-		err := binary.Write(buf, endianness, int32(v.Int()))
+
+		bitSize, hasBits, err := getBits(tag, sizeMap, 32, 2)
+		if err != nil {
+			return err
+		}
+		if hasBits {
+			err = writeIntsBits(buf, bitSize, endianness, v.Int())
+		} else {
+			err = binary.Write(buf, endianness, int32(v.Int()))
+		}
+
 		if err != nil {
 			return fmt.Errorf("%v : %v", fieldName, err)
 		}
 	case reflect.Int64:
-		_, has := tag.Lookup("bits")
-		if has {
-			return fmt.Errorf("bits not supported on int64")
-		}
 		sizeMap[fieldName] = int(v.Int())
-		err := binary.Write(buf, endianness, v.Int())
+
+		bitSize, hasBits, err := getBits(tag, sizeMap, 64, 2)
+		if err != nil {
+			return err
+		}
+		if hasBits {
+			err = writeIntsBits(buf, bitSize, endianness, v.Int())
+		} else {
+			err = binary.Write(buf, endianness, v.Int())
+		}
+
 		if err != nil {
 			return fmt.Errorf("%v : %v", fieldName, err)
 		}
@@ -471,53 +485,87 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 	return nil
 }
 
-func writeBits(buf bits.BitSetWriter, numOfBits int, endianness binary.ByteOrder, value uint64) error {
-	bits := make([]bool, numOfBits)
+func writeUintsBits(buf bits.BitSetWriter, numOfBits int, endianness binary.ByteOrder, value uint64) error {
+	intBits := make([]bool, numOfBits)
 	for i := 0; i < numOfBits; i++ {
-		bits[i] = value&(1<<i) > 0
+		intBits[i] = value&(1<<i) > 0
 	}
 
-	if endianness == binary.LittleEndian {
-		n, err := buf.WriteBits(bits)
-		if err != nil {
-			return err
-		}
-		if n != numOfBits {
-			return fmt.Errorf("only %v of %v bits written", n, numOfBits)
-		}
-		return nil
+	if endianness == binary.BigEndian {
+		intBits = byteSwapBitsToBig(intBits)
 	}
 
-	// else endianness == binary.BigEndian
-	stack := make([][]bool, 0)
-	for start := 0; start < numOfBits; start += 8 {
-		end := start + 8
-		if end > numOfBits {
-			end = numOfBits
-		}
-		stack = append(stack, bits[start:end])
+	n, err := buf.WriteBits(intBits)
+	if err != nil {
+		return err
 	}
-
-	for i := len(stack)/2 - 1; i >= 0; i-- {
-		opp := len(stack) - 1 - i
-		stack[i], stack[opp] = stack[opp], stack[i]
+	if n != numOfBits {
+		return fmt.Errorf("only %v of %v bits written", n, numOfBits)
 	}
-	for _, item := range stack {
-		n, err := buf.WriteBits(item)
-		if err != nil {
-			return err
-		}
-		if n != len(item) {
-			return fmt.Errorf("only %v of %v bits written", n, numOfBits)
-		}
-	}
-
 	return nil
 }
 
-func readBits(buf bits.BitSetReader, numOfBits int, endianness binary.ByteOrder) (uint64, error) {
-	bits := make([]bool, numOfBits)
-	n, err := buf.ReadBits(bits)
+func writeIntsBits(buf bits.BitSetWriter, numOfBits int, endianness binary.ByteOrder, value int64) error {
+	intBits := make([]bool, numOfBits)
+	for i := 0; i < numOfBits-1; i++ {
+		intBits[i] = value&(1<<i) > 0
+	}
+	intBits[len(intBits)-1] = value < 0
+
+	if endianness == binary.BigEndian {
+		intBits = byteSwapBitsToBig(intBits)
+	}
+
+	n, err := buf.WriteBits(intBits)
+	if err != nil {
+		return err
+	}
+	if n != numOfBits {
+		return fmt.Errorf("only %v of %v bits written", n, numOfBits)
+	}
+	return nil
+
+}
+
+func byteSwapBitsToBig(bytes []bool) []bool {
+	lenBytes := len(bytes)
+	result := make([]bool, lenBytes)
+
+	for start := 0; start < lenBytes; start = start + 8 {
+		end := start + 8
+		if end >= lenBytes {
+			end = lenBytes
+		}
+
+		offset := lenBytes - end
+		for j := 0; j < end-start; j++ {
+			result[offset+j] = bytes[start+j]
+		}
+	}
+	return result
+}
+
+func byteSwapBitsFromBig(bytes []bool) []bool {
+	result := make([]bool, len(bytes))
+
+	for i := 0; i < len(bytes); i++ {
+		end := len(bytes) - i*8
+		start := end - 8
+		if start < 0 {
+			start = 0
+		}
+
+		offset := i * 8
+		for j := 0; j < end-start; j++ {
+			result[offset+j] = bytes[start+j]
+		}
+	}
+	return result
+}
+
+func readUintsBits(buf bits.BitSetReader, numOfBits int, endianness binary.ByteOrder) (uint64, error) {
+	intBits := make([]bool, numOfBits)
+	n, err := buf.ReadBits(intBits)
 	if err != nil {
 		return 0, err
 	}
@@ -525,31 +573,43 @@ func readBits(buf bits.BitSetReader, numOfBits int, endianness binary.ByteOrder)
 		return 0, fmt.Errorf("only %v of %v bits read", n, numOfBits)
 	}
 
-	if endianness == binary.LittleEndian {
-		value := uint64(0)
-		for i := 0; i < numOfBits; i++ {
-			if bits[i] {
-				value += 1 << i
-			}
-		}
-		return value, nil
+	if endianness == binary.BigEndian {
+		intBits = byteSwapBitsFromBig(intBits)
 	}
 
-	//we need to undo the byte swapping for
-	var value uint64
-	byteIndex := uint64(0)
-	for end := numOfBits; end >= 0; end -= 8 {
-		start := end - 8
-		if start < 0 {
-			start = 0
+	value := uint64(0)
+	for i := 0; i < numOfBits; i++ {
+		if intBits[i] {
+			value += 1 << i
 		}
-		bytes := bits[start:end]
-		for i := 0; i < len(bytes); i++ {
-			if bytes[i] {
-				value += (1 << i) << (8 * byteIndex)
-			}
+	}
+	return value, nil
+
+}
+
+func readIntsBits(buf bits.BitSetReader, numOfBits int, endianness binary.ByteOrder) (int64, error) {
+	intBits := make([]bool, numOfBits)
+	n, err := buf.ReadBits(intBits)
+	if err != nil {
+		return 0, err
+	}
+	if n != numOfBits {
+		return 0, fmt.Errorf("only %v of %v bits read", n, numOfBits)
+	}
+
+	if endianness == binary.BigEndian {
+		intBits = byteSwapBitsFromBig(intBits)
+	}
+
+	value := int64(0)
+	if intBits[numOfBits-1] {
+		value -= 1
+	}
+	for i := 0; i < numOfBits-1; i++ {
+		value &= ^(1 << i)
+		if intBits[i] {
+			value |= 1 << i
 		}
-		byteIndex++
 	}
 
 	return value, nil
@@ -570,7 +630,7 @@ func getEndianness(tag reflect.StructTag) (binary.ByteOrder, error) {
 	return binary.LittleEndian, fmt.Errorf("unsupported endian value: %v", value)
 }
 
-func getBits(tag reflect.StructTag, sizeMap map[string]int, limit uint64) (int, bool, error) {
+func getBits(tag reflect.StructTag, sizeMap map[string]int, maxLimit, minLimit uint64) (int, bool, error) {
 	s, ok := tag.Lookup("bits")
 	if !ok {
 		return 0, false, nil
@@ -588,8 +648,11 @@ func getBits(tag reflect.StructTag, sizeMap map[string]int, limit uint64) (int, 
 		value = uint64(i)
 	}
 
-	if value > limit {
-		return 0, true, fmt.Errorf("bits value was larger than type limit")
+	if value > maxLimit {
+		return 0, true, fmt.Errorf("bits value was larger than maxLimit")
+	}
+	if value < minLimit {
+		return 0, true, fmt.Errorf("bits value was smaller than minLimit")
 	}
 
 	return int(value), true, nil
@@ -849,14 +912,14 @@ func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 			v.SetString(string(bs))
 		}
 	case reflect.Bool:
-		numOfBits, hasBits, err := getBits(tag, sizeMap, 8)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 8, 0)
 		if err != nil {
 			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		var x bool
 		if hasBits {
-			tmp, err := readBits(buf, numOfBits, endianness)
+			tmp, err := readUintsBits(buf, numOfBits, endianness)
 			if err != nil {
 				return fmt.Errorf("%v: %v", fieldName, err)
 			}
@@ -869,141 +932,163 @@ func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 
 		v.SetBool(x)
 	case reflect.Uint8:
-		numOfBits, hasBits, err := getBits(tag, sizeMap, 8)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 8, 0)
 		if err != nil {
 			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		var x uint8
 		if hasBits {
-			tmp, err := readBits(buf, numOfBits, endianness)
-			if err != nil {
-				return fmt.Errorf("%v: %v", fieldName, err)
-			}
+			var tmp uint64
+			tmp, err = readUintsBits(buf, numOfBits, endianness)
 			x = uint8(tmp)
 		} else {
-			if err := binary.Read(buf, endianness, &x); err != nil {
-				return fmt.Errorf("expected to read uint8 from %v: %v", fieldName, err)
-			}
+			err = binary.Read(buf, endianness, &x)
+		}
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		sizeMap[fieldName] = int(x)
 		v.SetUint(uint64(x))
 	case reflect.Uint16:
-		numOfBits, hasBits, err := getBits(tag, sizeMap, 16)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 16, 0)
 		if err != nil {
 			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		var x uint16
 		if hasBits {
-			tmp, err := readBits(buf, numOfBits, endianness)
-			if err != nil {
-				return fmt.Errorf("%v: %v", fieldName, err)
-			}
+			var tmp uint64
+			tmp, err = readUintsBits(buf, numOfBits, endianness)
 			x = uint16(tmp)
 		} else {
-			if err := binary.Read(buf, endianness, &x); err != nil {
-				return fmt.Errorf("expected to read uint16 from %v: %v", fieldName, err)
-			}
+			err = binary.Read(buf, endianness, &x)
+		}
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		sizeMap[fieldName] = int(x)
 		v.SetUint(uint64(x))
 	case reflect.Uint32:
-		numOfBits, hasBits, err := getBits(tag, sizeMap, 32)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 32, 0)
 		if err != nil {
 			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		var x uint32
 		if hasBits {
-			tmp, err := readBits(buf, numOfBits, endianness)
-			if err != nil {
-				return fmt.Errorf("%v: %v", fieldName, err)
-			}
+			var tmp uint64
+			tmp, err = readUintsBits(buf, numOfBits, endianness)
 			x = uint32(tmp)
 		} else {
-			if err := binary.Read(buf, endianness, &x); err != nil {
-				return fmt.Errorf("expected to read uint32 from %v: %v", fieldName, err)
-			}
+			err = binary.Read(buf, endianness, &x)
 		}
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
+		}
+
 		sizeMap[fieldName] = int(x)
 		v.SetUint(uint64(x))
 	case reflect.Uint64:
-		numOfBits, hasBits, err := getBits(tag, sizeMap, 64)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 64, 0)
 		if err != nil {
 			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		var x uint64
 		if hasBits {
-			x, err = readBits(buf, numOfBits, endianness)
-			if err != nil {
-				return fmt.Errorf("%v: %v", fieldName, err)
-			}
+			x, err = readUintsBits(buf, numOfBits, endianness)
 		} else {
-			if err := binary.Read(buf, endianness, &x); err != nil {
-				return fmt.Errorf("expected to read uint64 from %v: %v", fieldName, err)
-			}
+			err = binary.Read(buf, endianness, &x)
+		}
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		sizeMap[fieldName] = int(x)
 		v.SetUint(x)
 	case reflect.Int8:
-		_, hasBits, _ := getBits(tag, map[string]int{}, 8)
-		if hasBits {
-			return fmt.Errorf("bits not supported with int8: %v", fieldName)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 8, 2)
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		var x int8
-		if err := binary.Read(buf, endianness, &x); err != nil {
-			return fmt.Errorf("expected to read int8 from %v: %v", fieldName, err)
+		if hasBits {
+			var tmp int64
+			tmp, err = readIntsBits(buf, numOfBits, endianness)
+			x = int8(tmp)
+		} else {
+			err = binary.Read(buf, endianness, &x)
+		}
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		sizeMap[fieldName] = int(x)
 		v.SetInt(int64(x))
 	case reflect.Int16:
-		_, hasBits, _ := getBits(tag, map[string]int{}, 16)
-		if hasBits {
-			return fmt.Errorf("bits not supported with int16: %v", fieldName)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 16, 2)
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		var x int16
-		if err := binary.Read(buf, endianness, &x); err != nil {
-			return fmt.Errorf("expected to read int16 from %v: %v", fieldName, err)
+		if hasBits {
+			var tmp int64
+			tmp, err = readIntsBits(buf, numOfBits, endianness)
+			x = int16(tmp)
+		} else {
+			err = binary.Read(buf, endianness, &x)
+		}
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		sizeMap[fieldName] = int(x)
 		v.SetInt(int64(x))
 	case reflect.Int32:
-		_, hasBits, _ := getBits(tag, map[string]int{}, 32)
-		if hasBits {
-			return fmt.Errorf("bits not supported with int32: %v", fieldName)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 32, 2)
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		var x int32
-		if err := binary.Read(buf, endianness, &x); err != nil {
-			return fmt.Errorf("expected to read int32 from %v: %v", fieldName, err)
+		if hasBits {
+			var tmp int64
+			tmp, err = readIntsBits(buf, numOfBits, endianness)
+			x = int32(tmp)
+		} else {
+			err = binary.Read(buf, endianness, &x)
+		}
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		sizeMap[fieldName] = int(x)
 		v.SetInt(int64(x))
 	case reflect.Int64:
-		_, hasBits, _ := getBits(tag, map[string]int{}, 64)
-		if hasBits {
-			return fmt.Errorf("bits not supported with int64: %v", fieldName)
+		numOfBits, hasBits, err := getBits(tag, sizeMap, 64, 2)
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		var x int64
-		if err := binary.Read(buf, endianness, &x); err != nil {
-			return fmt.Errorf("expected to read int64 from %v: %v", fieldName, err)
+		if hasBits {
+			x, err = readIntsBits(buf, numOfBits, endianness)
+		} else {
+			err = binary.Read(buf, endianness, &x)
+		}
+		if err != nil {
+			return fmt.Errorf("%v: %v", fieldName, err)
 		}
 
 		sizeMap[fieldName] = int(x)
 		v.SetInt(x)
 	case reflect.Float32:
-		_, hasBits, _ := getBits(tag, map[string]int{}, 32)
+		_, hasBits, _ := getBits(tag, map[string]int{}, 32, 0)
 		if hasBits {
 			return fmt.Errorf("bits not supported with float32: %v", fieldName)
 		}
@@ -1015,7 +1100,7 @@ func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 
 		v.SetFloat(float64(x))
 	case reflect.Float64:
-		_, hasBits, _ := getBits(tag, map[string]int{}, 64)
+		_, hasBits, _ := getBits(tag, map[string]int{}, 64, 0)
 		if hasBits {
 			return fmt.Errorf("bits not supported with float64: %v", fieldName)
 		}
