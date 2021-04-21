@@ -88,12 +88,12 @@ field.
 #### bits
 
 When an unsigned integer or `bool` field is tagged with ``` `bits:"X" ``` then the number will be serialized into `X`
-number of bits. `X` must be a positive integer value and must be equal to or smaller than the max number of bits for the
-field (ie. `8` bits for an `uint8`). Note the `X` can either be a positive integer or an integer field name in the
-struct that occurs before the current field.
+number of bits. Note the `X` can either be a integer literal or an integer field name in the
+struct that occurs before the current field, in either case the value must be positive.
 
-Warning when using `bits` care must be taken, as it might differ from what you expect. The following example shows an
-example of how bits are managed when the number of bits extends beyond byte boundaries.
+When a signed integer is tagged with ``` `bits:"X" ``` then it must at least be a value `>=2`. Additionally, the MSB of the field will be reserved for the for telling if the value is negative.  And in the case of a negative value the twos complement is used.
+
+WARNING: when using `bits` care must be taken, as it might differ from what you expect when the bits number isn't a multiple of 8. 
 
 ```
 type Thing struct {
@@ -102,6 +102,10 @@ type Thing struct {
 
 
 bytes,_ := Encode(&Thing{0x155}) // 0x155 = 0b101010101
+
+fmt.Printf("%x",bytes)
+
+//output: 5501
 ```
 
 `bytes` would contain `[0x55 0x1]`
@@ -112,9 +116,12 @@ type Thing struct {
 }
 
 bytes, err := Encode(&Thing{0x155})  // 0x155 = 0b101010101
+fmt.Printf("%x",bytes)
+
+//output: ab00   
 ```
 
-`bytes` would contain `[171 0]`
+`bytes` would contain `[0xab 0x0]`
 
 At first glance this my look unexpected but when looking at the bits it will all make sense.
 
@@ -125,7 +132,7 @@ least significant byte comes first thus one would expect them to be combined in 
 resulting byte stream `[0b10101010,0b10000000]` == `[0x55 0x1]`.
 
 Where as in big endian the most significant byte come first thus one would expect them to be combined in this
-order [`1`,`10101010`] with the resulting byte stream `[0b11010101,0b00000000]`== `[171 0]`.
+order [`1`,`10101010`] with the resulting byte stream `[0b11010101,0b00000000]`== `[0xab 0x0]`.
 
 ## Supported field types
 
