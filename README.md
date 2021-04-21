@@ -63,11 +63,11 @@ expected := Thing{
 
 ## Tags
 
+Tags are annotations to specify specific handling for each field. All tags are case sensitive.
+
 #### omit
 
 When a field is to be skipped from the encoding use ``` `omit:""` ```.
-
-Tags are annotations to specify specific handling for each field. All tags are case sensitive.
 
 #### endian
 
