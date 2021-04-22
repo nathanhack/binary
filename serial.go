@@ -79,6 +79,14 @@ func validateOptions(options ...EncDecOption) error {
 //  StructEncDec options are also a way to change the behaviour of struct encoding for structs that do/can not implement
 //  BitsMarshaler.
 func Encode(st interface{}, options ...EncDecOption) ([]byte, error) {
+	buf, err := EncodeToBits(st, options...)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func EncodeToBits(st interface{}, options ...EncDecOption) (*bits.BitSetBuffer, error) {
 	if st == nil {
 		return nil, fmt.Errorf("nil pointer not alowed")
 	}
@@ -111,7 +119,7 @@ loop:
 	}
 
 	if processed {
-		return buf.Bytes(), nil
+		return buf, nil
 	}
 
 	//so we didn't have a BitMarshaler so we'll
@@ -123,7 +131,7 @@ loop:
 	}
 
 	if processed {
-		return buf.Bytes(), nil
+		return buf, nil
 	}
 
 	//lastly it's just a plain struct so we get to work on the fields
@@ -137,7 +145,7 @@ loop:
 			return nil, err
 		}
 	}
-	return buf.Bytes(), nil
+	return buf, nil
 }
 
 func encMarshaler(v reflect.Value, buf bits.BitSetWriter) (bool, error) {
@@ -670,6 +678,14 @@ func Decode(data []byte, value interface{}, options ...EncDecOption) error {
 	buf, err := bits.NewFromBytes(data)
 	if err != nil {
 		return err
+	}
+
+	return DecodeToBits(buf, value, options...)
+}
+
+func DecodeToBits(buf *bits.BitSetBuffer, value interface{}, options ...EncDecOption) error {
+	if buf == nil || value == nil {
+		return fmt.Errorf("nil parameters not allowed")
 	}
 
 	t := reflect.TypeOf(value)
