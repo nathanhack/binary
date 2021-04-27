@@ -335,7 +335,7 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 			if v.Bool() {
 				tmp = 1
 			}
-			err = writeUintsBits(buf, bitSize, endianness, tmp)
+			err = bits.WriteUint(buf, bitSize, endianness, tmp)
 		} else {
 			err = binary.Write(buf, endianness, v.Bool())
 		}
@@ -350,7 +350,7 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 			return err
 		}
 		if hasBits {
-			err = writeUintsBits(buf, bitSize, endianness, v.Uint())
+			err = bits.WriteUint(buf, bitSize, endianness, v.Uint())
 		} else {
 			err = binary.Write(buf, endianness, uint8(v.Uint()))
 		}
@@ -365,7 +365,7 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 			return err
 		}
 		if hasBits {
-			err = writeUintsBits(buf, bitSize, endianness, v.Uint())
+			err = bits.WriteUint(buf, bitSize, endianness, v.Uint())
 		} else {
 			err = binary.Write(buf, endianness, uint16(v.Uint()))
 		}
@@ -380,7 +380,7 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 			return err
 		}
 		if hasBits {
-			err = writeUintsBits(buf, bitSize, endianness, v.Uint())
+			err = bits.WriteUint(buf, bitSize, endianness, v.Uint())
 		} else {
 			err = binary.Write(buf, endianness, uint32(v.Uint()))
 		}
@@ -395,7 +395,7 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 			return err
 		}
 		if hasBits {
-			err = writeUintsBits(buf, bitSize, endianness, v.Uint())
+			err = bits.WriteUint(buf, bitSize, endianness, v.Uint())
 
 		} else {
 			err = binary.Write(buf, endianness, v.Uint())
@@ -412,7 +412,7 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 			return err
 		}
 		if hasBits {
-			err = writeIntsBits(buf, bitSize, endianness, v.Int())
+			err = bits.WriteInt(buf, bitSize, endianness, v.Int())
 		} else {
 			err = binary.Write(buf, endianness, int8(v.Int()))
 		}
@@ -428,7 +428,7 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 			return err
 		}
 		if hasBits {
-			err = writeIntsBits(buf, bitSize, endianness, v.Int())
+			err = bits.WriteInt(buf, bitSize, endianness, v.Int())
 		} else {
 			err = binary.Write(buf, endianness, int16(v.Int()))
 		}
@@ -444,7 +444,7 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 			return err
 		}
 		if hasBits {
-			err = writeIntsBits(buf, bitSize, endianness, v.Int())
+			err = bits.WriteInt(buf, bitSize, endianness, v.Int())
 		} else {
 			err = binary.Write(buf, endianness, int32(v.Int()))
 		}
@@ -460,7 +460,7 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 			return err
 		}
 		if hasBits {
-			err = writeIntsBits(buf, bitSize, endianness, v.Int())
+			err = bits.WriteInt(buf, bitSize, endianness, v.Int())
 		} else {
 			err = binary.Write(buf, endianness, v.Int())
 		}
@@ -491,136 +491,6 @@ func EncodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 	}
 
 	return nil
-}
-
-func writeUintsBits(buf bits.BitSetWriter, numOfBits int, endianness binary.ByteOrder, value uint64) error {
-	intBits := make([]bool, numOfBits)
-	for i := 0; i < numOfBits; i++ {
-		intBits[i] = value&(1<<i) > 0
-	}
-
-	if endianness == binary.BigEndian {
-		intBits = byteSwapBitsToBig(intBits)
-	}
-
-	n, err := buf.WriteBits(intBits)
-	if err != nil {
-		return err
-	}
-	if n != numOfBits {
-		return fmt.Errorf("only %v of %v bits written", n, numOfBits)
-	}
-	return nil
-}
-
-func writeIntsBits(buf bits.BitSetWriter, numOfBits int, endianness binary.ByteOrder, value int64) error {
-	intBits := make([]bool, numOfBits)
-	for i := 0; i < numOfBits-1; i++ {
-		intBits[i] = value&(1<<i) > 0
-	}
-	intBits[len(intBits)-1] = value < 0
-
-	if endianness == binary.BigEndian {
-		intBits = byteSwapBitsToBig(intBits)
-	}
-
-	n, err := buf.WriteBits(intBits)
-	if err != nil {
-		return err
-	}
-	if n != numOfBits {
-		return fmt.Errorf("only %v of %v bits written", n, numOfBits)
-	}
-	return nil
-
-}
-
-func byteSwapBitsToBig(bytes []bool) []bool {
-	lenBytes := len(bytes)
-	result := make([]bool, lenBytes)
-
-	for start := 0; start < lenBytes; start = start + 8 {
-		end := start + 8
-		if end >= lenBytes {
-			end = lenBytes
-		}
-
-		offset := lenBytes - end
-		for j := 0; j < end-start; j++ {
-			result[offset+j] = bytes[start+j]
-		}
-	}
-	return result
-}
-
-func byteSwapBitsFromBig(bytes []bool) []bool {
-	result := make([]bool, len(bytes))
-
-	for i := 0; i < len(bytes); i++ {
-		end := len(bytes) - i*8
-		start := end - 8
-		if start < 0 {
-			start = 0
-		}
-
-		offset := i * 8
-		for j := 0; j < end-start; j++ {
-			result[offset+j] = bytes[start+j]
-		}
-	}
-	return result
-}
-
-func readUintsBits(buf bits.BitSetReader, numOfBits int, endianness binary.ByteOrder) (uint64, error) {
-	intBits := make([]bool, numOfBits)
-	n, err := buf.ReadBits(intBits)
-	if err != nil {
-		return 0, err
-	}
-	if n != numOfBits {
-		return 0, fmt.Errorf("only %v of %v bits read", n, numOfBits)
-	}
-
-	if endianness == binary.BigEndian {
-		intBits = byteSwapBitsFromBig(intBits)
-	}
-
-	value := uint64(0)
-	for i := 0; i < numOfBits; i++ {
-		if intBits[i] {
-			value += 1 << i
-		}
-	}
-	return value, nil
-
-}
-
-func readIntsBits(buf bits.BitSetReader, numOfBits int, endianness binary.ByteOrder) (int64, error) {
-	intBits := make([]bool, numOfBits)
-	n, err := buf.ReadBits(intBits)
-	if err != nil {
-		return 0, err
-	}
-	if n != numOfBits {
-		return 0, fmt.Errorf("only %v of %v bits read", n, numOfBits)
-	}
-
-	if endianness == binary.BigEndian {
-		intBits = byteSwapBitsFromBig(intBits)
-	}
-
-	value := int64(0)
-	if intBits[numOfBits-1] {
-		value -= 1
-	}
-	for i := 0; i < numOfBits-1; i++ {
-		value &= ^(1 << i)
-		if intBits[i] {
-			value |= 1 << i
-		}
-	}
-
-	return value, nil
 }
 
 func getEndianness(tag reflect.StructTag) (binary.ByteOrder, error) {
@@ -935,7 +805,7 @@ func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 
 		var x bool
 		if hasBits {
-			tmp, err := readUintsBits(buf, numOfBits, endianness)
+			tmp, err := bits.ReadUint(buf, numOfBits, endianness)
 			if err != nil {
 				return fmt.Errorf("%v: %v", fieldName, err)
 			}
@@ -956,7 +826,7 @@ func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 		var x uint8
 		if hasBits {
 			var tmp uint64
-			tmp, err = readUintsBits(buf, numOfBits, endianness)
+			tmp, err = bits.ReadUint(buf, numOfBits, endianness)
 			x = uint8(tmp)
 		} else {
 			err = binary.Read(buf, endianness, &x)
@@ -976,7 +846,7 @@ func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 		var x uint16
 		if hasBits {
 			var tmp uint64
-			tmp, err = readUintsBits(buf, numOfBits, endianness)
+			tmp, err = bits.ReadUint(buf, numOfBits, endianness)
 			x = uint16(tmp)
 		} else {
 			err = binary.Read(buf, endianness, &x)
@@ -996,7 +866,7 @@ func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 		var x uint32
 		if hasBits {
 			var tmp uint64
-			tmp, err = readUintsBits(buf, numOfBits, endianness)
+			tmp, err = bits.ReadUint(buf, numOfBits, endianness)
 			x = uint32(tmp)
 		} else {
 			err = binary.Read(buf, endianness, &x)
@@ -1015,7 +885,7 @@ func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 
 		var x uint64
 		if hasBits {
-			x, err = readUintsBits(buf, numOfBits, endianness)
+			x, err = bits.ReadUint(buf, numOfBits, endianness)
 		} else {
 			err = binary.Read(buf, endianness, &x)
 		}
@@ -1034,7 +904,7 @@ func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 		var x int8
 		if hasBits {
 			var tmp int64
-			tmp, err = readIntsBits(buf, numOfBits, endianness)
+			tmp, err = bits.ReadInt(buf, numOfBits, endianness)
 			x = int8(tmp)
 		} else {
 			err = binary.Read(buf, endianness, &x)
@@ -1054,7 +924,7 @@ func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 		var x int16
 		if hasBits {
 			var tmp int64
-			tmp, err = readIntsBits(buf, numOfBits, endianness)
+			tmp, err = bits.ReadInt(buf, numOfBits, endianness)
 			x = int16(tmp)
 		} else {
 			err = binary.Read(buf, endianness, &x)
@@ -1074,7 +944,7 @@ func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 		var x int32
 		if hasBits {
 			var tmp int64
-			tmp, err = readIntsBits(buf, numOfBits, endianness)
+			tmp, err = bits.ReadInt(buf, numOfBits, endianness)
 			x = int32(tmp)
 		} else {
 			err = binary.Read(buf, endianness, &x)
@@ -1093,7 +963,7 @@ func DecodeField(fieldName string, t reflect.Type, v reflect.Value, tag reflect.
 
 		var x int64
 		if hasBits {
-			x, err = readIntsBits(buf, numOfBits, endianness)
+			x, err = bits.ReadInt(buf, numOfBits, endianness)
 		} else {
 			err = binary.Read(buf, endianness, &x)
 		}
